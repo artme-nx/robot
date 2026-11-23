@@ -243,8 +243,19 @@ glavnom pokazivaču bez hovera (iPad). Sve ispod vrijedi **samo na mobitelu** (`
   je tamo gdje je lice bilo kad je pronađeno (isti neutralni položaj kao za ORBIT, glatko).
 - **Kadar:** mjerilo robota prati visinu prozora kao na računalu (bez donje granice); u položenom položaju
   ×0,7, da glava i tamo zauzme oko pola visine kadra.
-- **Kvaliteta:** uvijek kreće s `low` efektima i pixel ratio 1; dinamička rezolucija ga diže do 1,5 kad uređaj
-  može, a spušta do 0,6 kad ne može. Proračun prati stvarni ritam zaslona (u štednji baterije preglednik crta
+- **Brzo učitavanje:** geometrija robota za mobitel izračunata je unaprijed pri buildu (`npm run bake`, poziva ga
+  i `npm run build` / `dev`; skripta `scripts/bake-mobile.mjs`) u grubljoj razini — 60k umjesto 228k trokuta,
+  komprimirano meshoptimizerom u `public/mobile/robot.bin` (0,33 MB). Isto tako i studijski HDRI smanjen na 1k
+  (`public/mobile/studio_1k.hdr`, 1,6 MB umjesto 6,4 MB). Mobitel to samo preuzme i dekodira — nema SDF workera.
+  Generirane datoteke nisu u gitu (stvaraju se pri svakom buildu, i u GitHub Actions).
+- **Ekran za učitavanje** na mobitelu pokazuje stvarni napredak: preuzeti bajtovi (80 %), sastavljanje robota,
+  kompajliranje shadera i prvi frameovi.
+- **Kamera** prati samo lice (model za ruke se ne učitava; ruke zamjenjuju geste dodirom), slika 640×360 na
+  30 fps, detekcija lica najviše 20 puta u sekundi; kamera (i MediaPipe) kreće tek kad je robot na ekranu, da
+  ne otima mrežu i procesor robotu.
+- **Kvaliteta:** profil `mobile` — bez ambijentalne okluzije (N8AO) i bez PCSS-a (obične PCF sjene, mape
+  512 / 256), bloom s 4 razine, lakša volumetrija, SMAA low, bez MSAA na platnu, okolina 256. Render kreće s
+  pixel ratio 1; dinamička rezolucija ga diže do 1,5 kad uređaj može, a spušta do 0,6 kad ne može. Proračun prati stvarni ritam zaslona (u štednji baterije preglednik crta
   na 30 Hz), a kad ni najniža rezolucija ne drži 60 fps (35–55 fps, trzanje), prelazi na stabilnih 30 fps.
 - **Dodir (bez kamere, ili dok se kamera pokreće):** povlačenje jednim prstom glumi glavu (cijela širina
   ekrana ≈ ±18 cm), kratki dodir je prst koji dotakne to mjesto (lice → trzaj), držanje prsta na licu ~2 s →
