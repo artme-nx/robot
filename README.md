@@ -133,7 +133,7 @@ npm run preview   # lokalni pregled builda
 | --- | --- |
 | `M` | ručni izbor kamere: **ORBIT** ↔ **WINDOW** (kratko se prikaže u kutu) |
 | `N` | ORBIT: "ovo je centar" — trenutni položaj glave postaje neutralni |
-| `T` | ORBIT panel: pojačanja, kutovi, zoom, mrtva zona, krutost opruge (spremaju se) |
+| `T` | FOLLOW ME: panel za kameru (Head gain, Head max, Eye lock); ORBIT: pojačanja, kutovi, zoom, mrtva zona, krutost opruge (spremaju se) |
 | `G` | **LOOK AROUND** ↔ **FOLLOW ME** (isto kao gumb u dnu ekrana) |
 | `E` | boja očiju robota (cijan / jantar) |
 | `Q` | kvaliteta: high / low |
@@ -171,13 +171,24 @@ Okret glave je namjerno pojačan da reakcija bude jasna na prvi pogled. **Mišem
 mobitelu) pokazivač na rubu ekrana daje ~41° okreta glave (mobitel ~48°), na pola puta ~25° (mobitel ~33°).
 Oči stignu prve, a glava i vrat slijede s kašnjenjem i inercijom; poprsje stoji.
 
-**S kamerom** izgleda isto kao s mišem: pomak glave od neutralnog položaja preslikava se na raspon pokazivača
-— prirodno naginjanje **±15 cm** (na 50–70 cm od ekrana; mobitel ±10 cm) daje isti raspon kutova kao miš od
-ruba do ruba, a dalje je meki limit na najvećem kutu miša. Neutralni položaj kalibrira se sam ~1,4 s nakon što
-se lice pronađe (kao za ORBIT, i nakon svakog povratka s miša/dodira na kameru), pa robot gleda ravno u tebe i
-kad ne sjediš u sredini i iako je kamera iznad ekrana; `N` ga postavlja ručno. Blenda i dalje prati stvarnu
-udaljenost. (Provjereno sintetičkim licem kroz `HeadTracker`: procjena bočnog pomaka ne ovisi o FOV-u kamere
-i ne preuveličava pomak — kad se glava pri naginjanju okrene prema ekranu, javlja ~5 % manje.)
+**S kamerom** je drukčije nego s mišem: miš je meta na ekranu, pa okret prema njemu izgleda točno, ali gledatelj
+je ispred ravnog ekrana s fiksnom kamerom — lice koje gleda u kameru izgleda kao da gleda njega iz svakog
+položaja, a svaki veći okret u stranu izgleda kao pogled pokraj njega. Zato s kamerom:
+- **oči drže kontakt:** zjenice cijelo vrijeme gledaju u render kameru (ravno iz ekrana prema tebi) bez obzira
+  na okret glave — kad se glava okrene, oči se u dupljama vrate da ostanu na tebi; sakade na tvoje oči i usta
+  ostaju, ali male;
+- **glava i vrat samo naznačuju smjer:** okreću se prema strani na koju si otišao za stvarni geometrijski kut
+  prema tvojim očima (bez pojačanja), s mekim limitom 15° vodoravno i 8° okomito; opruge i kašnjenje su isti;
+- **redoslijed:** oči odmah malo krenu prema tvom novom položaju, glava krene za njima i smiri se, a oči se
+  pritom vrate točno na tebe;
+- neutralni položaj kalibrira se sam ~1,4 s nakon što se lice pronađe (kao za ORBIT, i nakon svakog povratka s
+  miša/dodira na kameru), pa robot gleda ravno u tebe i kad ne sjediš u sredini i iako je kamera iznad ekrana;
+  `N` ga postavlja ručno. Blenda prati stvarnu udaljenost. Isto na mobitelu s kamerom.
+
+**Panel `T` u FOLLOW ME** podešava to uživo (pamti se u pregledniku) i prikazuje trenutne vrijednosti kao tekst:
+*Head gain* 0–2 (udio stvarnog kuta, zadano 1), *Head max* 0–45° (meki limit vodoravno, okomito 8/15 toga,
+zadano 15°) i *Eye lock* 0–1 (0 = oči ciljaju stvarni položaj tvojih očiju, 1 = render kameru, zadano 1), uz
+živi prikaz kuta glave i odstupanja pogleda od kamere. U LOOK AROUND / ORBIT `T` otvara ORBIT panel kao prije.
 
 **LOOK AROUND** = ORBIT kamera + pogled 1: ti kružiš oko robota, a on stoji mirno (opis ORBIT-a ispod).
 
@@ -380,7 +391,9 @@ Za automatske testove (Playwright) stranica izlaže `window.__ht`: `setHead([x, 
 od centra prozora, `null` vraća praćenje), `setQuality('high'|'low')`, `setStereo(bool)`,
 `setCameraMode('orbit'|'window'|'fixed')`, `setOrbit({ az, el, zoom })` (orbita bez glave; `null` vraća upravljanje),
 `setViewMode('follow'|'look')` (FOLLOW ME / LOOK AROUND, kao gumb), `setCameraHead([x, y, z])` (položaj glave kao s kamere — prolazi kroz neutralni položaj i
-preslikavanje FOLLOW ME; `null` vraća pravu kameru), `setGazeMode(1|2|3)` (pogled za trenutni
+ponašanje FOLLOW ME s kamerom; `null` vraća pravu kameru), `setFollow({ headGain, headMax, eyeLock })` i
+`follow` (postavke panela T, bez spremanja), `state().eyeContactDeg` (kut između pogleda i smjera prema
+render kameri), `setGazeMode(1|2|3)` (pogled za trenutni
 način kamere), `blink()` (okini zatvarač odmah), `hints` (upute: `isDone(id)`, `items`), `benchmark(n)` (ms po
 frameu bez vsynca), `robot` (objekt scene; `robot.wake()` ponovno budi oči) i `state()` (`phase`: `loading` →
 `compiling` → `live`; `ready`: robot je na ekranu; `viewMode`, `cameraMode`, `gazeMode`, `headYawDeg` — okret

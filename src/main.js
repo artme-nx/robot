@@ -29,7 +29,8 @@ import { Loader } from './ui/loader.js';
 import { ModeSwitch } from './ui/modeSwitch.js';
 import { Hints } from './ui/hints.js';
 import { CameraNote } from './ui/cameraNote.js';
-import { TouchInput, HEAD_RANGE as TOUCH_HEAD_RANGE } from './tracking/touchInput.js';
+import { TouchInput } from './tracking/touchInput.js';
+import { FollowPanel, loadFollowSettings } from './ui/followPanel.js';
 import { IS_MOBILE, IN_APP, MOBILE, mobileCameraFov, mobileCameraPosition } from './device.js';
 import { useBakedGeometry } from './geometry/generate.js';
 import { useMobileEnvironment } from './render/environment.js';
@@ -357,6 +358,8 @@ const panel = new CalibrationPanel(settings, (s) => {
 });
 const orbit = new OrbitController(orbitSettings);
 const orbitPanel = new OrbitPanel(orbitSettings, () => {});
+const followSettings = loadFollowSettings();
+const followPanel = new FollowPanel(followSettings);
 const modeSwitch = new ModeSwitch((mode) => setViewMode(mode));
 modeSwitch.set(viewModeOf(cameraMode));
 // Upute (izmjenjuju se; svaka nestane kad gesta prvi put uspije).
@@ -464,11 +467,17 @@ window.addEventListener('keydown', (e) => {
       break;
     case 'c':
       panel.toggle();
-      if (panel.visible) orbitPanel.toggle(false);
+      if (panel.visible) (orbitPanel.toggle(false), followPanel.toggle(false));
       break;
     case 't':
-      orbitPanel.toggle();
-      if (orbitPanel.visible) panel.toggle(false);
+      // FOLLOW ME: panel za kameru (Head gain, Head max, Eye lock); inače ORBIT panel.
+      if (cameraMode === 'fixed') {
+        followPanel.toggle();
+        if (followPanel.visible) (panel.toggle(false), orbitPanel.toggle(false));
+      } else {
+        orbitPanel.toggle();
+        if (orbitPanel.visible) (panel.toggle(false), followPanel.toggle(false));
+      }
       break;
     case 'n':
       orbit.recalibrate(performance.now(), 0.6);
@@ -524,6 +533,7 @@ window.addEventListener('keydown', (e) => {
     case 'escape':
       panel.toggle(false);
       orbitPanel.toggle(false);
+      followPanel.toggle(false);
       break;
   }
 });
@@ -633,31 +643,32 @@ function updatePose(now, dt, rect) {
   return source;
 }
 
-// ---------- FOLLOW ME s kamerom = kao miš ----------
-// Kamera javlja stvarni položaj glave, ali robot se okreće kao da ga vodi miš: pomak glave
-// od neutralnog položaja (kalibrira se ~1,4 s nakon što se lice pronađe, kao za ORBIT, pa
-// robot gleda ravno u tebe i kad ne sjediš u sredini i iako je kamera iznad ekrana)
-// preslikava se na raspon pokazivača. Naginjanje ±15 cm (mobitel ±10 cm) = miš od ruba do
-// ruba; dalje meki limit prema rubu miša, pa je najveći kut miša gornja granica. Kut se
-// računa na udaljenosti miša (60 / 35 cm); blenda i dalje dobiva stvarnu udaljenost.
-const CAMERA_LEAN = IS_MOBILE ? { x: 10, y: 7 } : { x: 15, y: 10 };
-const KNEE = 0.85; // linearno do 85 % raspona, zatim meko prema rubu (nikad preko)
-const softKnee = (u) => {
-  const a = Math.abs(u);
-  return a <= KNEE ? u : Math.sign(u) * (KNEE + (1 - KNEE) * Math.tanh((a - KNEE) / (1 - KNEE)));
-};
-const followEye = [0, 0, 0];
-function followMeEye(rect) {
+// ---------- FOLLOW ME s kamerom ----------
+// Gledatelj je ispred ravnog ekrana s fiksnom kamerom: lice koje gleda u kameru izgleda kao da
+// gleda njega iz svakog položaja. Zato robot dobiva stvarni položaj tvojih očiju u odnosu na
+// neutralni (kalibrira se ~1,4 s nakon što se lice pronađe, kao za ORBIT; robot gleda ravno u
+// tebe i kad ne sjediš u sredini, i iako je kamera iznad ekrana), glava se okreće samo za udio
+// stvarnog kuta (Head gain, meki limit Head max), a oči drže kontakt s render kamerom (Eye lock).
+// Postavke: panel T u FOLLOW ME (FollowPanel), pamte se u pregledniku.
+const cameraEye = [0, 0, 0];
+function cameraViewer(rect) {
   const n = orbit.neutral;
   const ok = n && !orbit.calibrating;
   const w = smoothstep(pose.weight);
-  // Rub "miša": računalo 0,75 širine/visine prozora (MouseHead), mobitel raspon povlačenja (TouchInput).
-  const edgeX = IS_MOBILE ? TOUCH_HEAD_RANGE[0] : rect.width * 0.75;
-  const edgeY = IS_MOBILE ? TOUCH_HEAD_RANGE[1] : rect.height * 0.75;
-  followEye[0] = rect.cx + edgeX * softKnee(ok ? (pose.tracked[0] - n.x) / CAMERA_LEAN.x : 0) * w;
-  followEye[1] = rect.cy + edgeY * softKnee(ok ? (pose.tracked[1] - n.y) / CAMERA_LEAN.y : 0) * w;
-  followEye[2] = REST_DISTANCE;
-  return followEye;
+  cameraEye[0] = rect.cx + (ok ? pose.tracked[0] - n.x : 0) * w;
+  cameraEye[1] = rect.cy + (ok ? pose.tracked[1] - n.y : 0) * w;
+  cameraEye[2] = pose.eye[2];
+  return cameraEye;
+}
+function cameraFollowCtx() {
+  const f = followSettings;
+  return {
+    gain: f.headGain,
+    maxYaw: THREE.MathUtils.degToRad(f.headMax),
+    maxPitch: THREE.MathUtils.degToRad(f.headMax * (8 / 15)),
+    eyeLock: f.eyeLock,
+    lookAt: camMono.position.toArray(),
+  };
 }
 
 const mobileCenter = [0, 0, 0]; // računalo: uvijek nula
@@ -836,11 +847,12 @@ function frame() {
     override: handOverride,
   });
 
-  // FOLLOW ME s kamerom: pogled kao s mišem (vidi followMeEye); miš i dodir idu izravno.
+  // FOLLOW ME s kamerom: stvarni položaj očiju od neutralnog + kontakt očima (vidi cameraViewer);
+  // miš i dodir idu izravno, kao prije (tamo je meta na ekranu).
   const cameraFollow = mode === 'fixed' && (source === 'kamera' || source === 'centar');
   robot.update(t, dt, {
-    eye: mode === 'orbit' ? camMono.position.toArray() : cameraFollow ? followMeEye(rect) : pose.eye,
-    viewerDistance: cameraFollow ? pose.eye[2] : undefined,
+    eye: mode === 'orbit' ? camMono.position.toArray() : cameraFollow ? cameraViewer(rect) : pose.eye,
+    cameraFollow: cameraFollow ? cameraFollowCtx() : null,
     rect,
     cameraMode: mode,
     gazeMode: gazeModes[mode],
@@ -874,6 +886,11 @@ function frame() {
       : CAMERA_BADGE[mode];
   debug.draw({ tracker, hands, hand, vision, source, eye: pose.eye, rect, stereo, sceneName: robot.name, quality: `${quality} ${renderer.getPixelRatio().toFixed(2)}×`, orbitInfo });
   panel.showMeasurement(pose.eye, source);
+  followPanel.showState(
+    cameraFollow
+      ? `Head ${THREE.MathUtils.radToDeg(robot.lastGaze?.head.x ?? 0).toFixed(1)}° · gaze vs camera ${(robot.eyeContactDeg ?? 0).toFixed(1)}°`
+      : 'Live values appear while the camera tracks your face (FOLLOW ME).',
+  );
   orbitPanel.showState(mode === 'orbit' ? orbitInfo : mode === 'fixed' ? 'FOLLOW ME: kamera je fiksna (G za LOOK AROUND, M za ORBIT).' : 'Robot je u WINDOW načinu (M za orbit).');
 }
 renderer.setAnimationLoop(frame);
@@ -924,6 +941,9 @@ window.__ht = {
   setHead: (v) => (headOverride = v ? [...v] : null),
   /** Test: položaj glave [x, y, z] u cm (prostor ekrana) kao da ga javlja kamera; null vraća pravu kameru. */
   setCameraHead: (v) => (cameraHeadOverride = v ? [...v] : null),
+  /** FOLLOW ME s kamerom: { headGain, headMax, eyeLock } (bez spremanja; panel T sprema). */
+  follow: followSettings,
+  setFollow: (o) => Object.assign(followSettings, o),
   /**
    * Ruka bez kamere: { tip:[x,y] (NDC), r (udaljenost ruke / glave, 0.62 = neutralno),
    * gesture: 'point'|'pinch'|'open'|'fist'|'none', spread, two?: {rect} }; null vraća kameru/miš.
@@ -965,6 +985,7 @@ window.__ht = {
     gazeMode: gazeModes[cameraMode],
     headYawDeg: +THREE.MathUtils.radToDeg(robot.lastGaze?.head.x ?? 0).toFixed(1),
     cross: +robot.cross.toFixed(2),
+    eyeContactDeg: robot.eyeContactDeg == null ? null : +robot.eyeContactDeg.toFixed(2),
     quality,
     pixelRatio: renderer.getPixelRatio(),
     drawCalls: renderer.info.render.calls,
