@@ -309,3 +309,67 @@ kbd + kbd { margin-left: 0; }
 @media (max-width: 640px) {
   .hud__keys, .hud__hint, .hud__hands { display: none; }
 }
+
+/* Ekran za učitavanje: crno, mali natpis i tanka traka koja klizi; odtopi se kad je robot na ekranu */
+.loader {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  background: #000;
+  color: rgb(255 255 255 / 0.56);
+  transition: opacity 0.9s cubic-bezier(0.33, 0, 0.2, 1), visibility 0s linear 0.9s;
+}
+.loader.is-done { opacity: 0; visibility: hidden; pointer-events: none; }
+.loader__brand {
+  font: 400 12px/1 var(--font-sans);
+  letter-spacing: 0.14em;
+  padding-left: 0.14em; /* optički centrirano uz letter-spacing */
+}
+.loader__bar {
+  position: relative;
+  width: 56px;
+  height: 1px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 0.08);
+}
+.loader__bar::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: rgb(255 255 255 / 0.55);
+  animation: loader-slide 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes loader-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+@keyframes loader-pulse { 50% { opacity: 0.25; } }
+.loader__status {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 28px);
+  transform: translateX(-50%);
+  width: min(420px, 84vw);
+  font-size: 12px;
+  text-align: center;
+}
+.loader.is-failed .loader__bar { display: none; }
+.loader.is-failed .loader__status { color: var(--color-warn); }
+@media (prefers-reduced-motion: reduce) {
+  .loader { transition: opacity 0.25s linear, visibility 0s linear 0.25s; }
+  .loader__bar::after { width: 100%; animation: loader-pulse 2.4s ease-in-out infinite; }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

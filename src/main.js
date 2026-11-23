@@ -1,7 +1,7 @@
-// Ekran kao prozor — head-coupled perspective s praćenjem glave web kamerom.
+// Robot | Artificial Media — head-coupled perspective s praćenjem glave web kamerom:
+// robot iza ekrana gleda u tvoje oči i reagira na ruke.
 
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 import { loadSettings } from './config.js';
 import { VisionSource } from './tracking/vision.js';
@@ -18,34 +18,34 @@ import { AnaglyphRenderer } from './render/anaglyph.js';
 import { installPCSS } from './render/pcss.js';
 import { PostPipeline, QUALITY } from './render/postPipeline.js';
 import { GpuProfiler } from './render/gpuProfiler.js';
-import { BoxScene } from './scenes/boxScene.js';
-import { ModelScene } from './scenes/modelScene.js';
-import { MuseumScene } from './scenes/museum/museumScene.js';
 import { RobotScene } from './scenes/robot/robotScene.js';
-import { classifyFiles, loadDefaultHead, loadMeshFiles, loadSplatFile } from './scenes/loaders.js';
+import { classifyFiles, loadMeshFiles } from './scenes/loaders.js';
 import { DebugOverlay } from './ui/debugOverlay.js';
 import { CalibrationPanel } from './ui/calibrationPanel.js';
 import { OrbitPanel } from './ui/orbitPanel.js';
 import { OrbitController, loadOrbitSettings } from './camera/orbitController.js';
 import { Hud } from './ui/hud.js';
+import { Loader } from './ui/loader.js';
 import { setupDropzone } from './ui/dropzone.js';
 import './style.css';
 
 const REST_DISTANCE = 60; // cm — kamo se pogled vraća kad se lice izgubi
 const NEAR = 0.5;
 const FAR = 2000;
+// Robot se prvo crta ispod ekrana za učitavanje: prvi frameovi kompajliraju shadere
+// postprocessinga i alociraju sjene, pa zapinju. Ekran se odtopi tek kad se render
+// smiri (nekoliko brzih frameova zaredom), a najkasnije nakon maxWaitMs.
+const REVEAL = { stableFrames: 4, stableFrameMs: 25, maxWaitMs: 900 };
 
 const settings = loadSettings();
 const orbitSettings = loadOrbitSettings();
 installPCSS();
 
-// Način kamere po sceni: 'window' (fizički točna off-axis projekcija) ili 'orbit'.
-// ORBIT je zadan za Vitrinu i Robota; Kutija podržava samo window.
-const CAMERA_MODES_KEY = 'robot:cameraModes:v1';
-let cameraModes = { 0: 'window', 1: 'window', 2: 'orbit', 3: 'orbit' };
+// Način kamere: 'orbit' (zadano) ili 'window' (fizički točna off-axis projekcija).
+const CAMERA_MODE_KEY = 'robot:cameraMode';
+let cameraMode = 'orbit';
 try {
-  const saved = JSON.parse(localStorage.getItem(CAMERA_MODES_KEY) ?? 'null');
-  if (saved) cameraModes = { ...cameraModes, ...saved, 0: 'window' };
+  if (localStorage.getItem(CAMERA_MODE_KEY) === 'window') cameraMode = 'window';
 } catch {
   /* bez pohrane */
 }
@@ -65,19 +65,18 @@ const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
+// Tone mapping (AgX) radi postprocessing; PCSS sjene trebaju BasicShadowMap, a
+// računaju se jednom po frameu (refleksije, oba oka i bloom ih dijele).
+renderer.toneMapping = THREE.NoToneMapping;
 renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.type = THREE.BasicShadowMap;
+renderer.shadowMap.autoUpdate = false;
 renderer.info.autoReset = false;
 
 const scene = new THREE.Scene();
-const pmrem = new THREE.PMREMGenerator(renderer);
-const defaultEnvironment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environment = defaultEnvironment;
-pmrem.dispose();
 
-// Sve scene su građene oko ishodišta; "world" se pomiče na centar prozora.
+// Robot je građen oko ishodišta; "world" se pomiče na centar prozora.
 const world = new THREE.Group();
 scene.add(world);
 
@@ -87,35 +86,28 @@ const camRight = new THREE.PerspectiveCamera();
 const anaglyph = new AnaglyphRenderer(renderer);
 const profiler = new GpuProfiler(renderer.getContext());
 
-// Postprocessing (N8AO, volumetrija, bloom, SMAA…) — samo za scene 3 i 4.
-let post = null;
-function getPost() {
-  if (!post) {
-    post = new PostPipeline(renderer, scene, camMono);
-    post.setQuality(quality);
-    for (const [name, pass] of Object.entries({
-      render: post.renderPass,
-      n8ao: post.n8ao,
-      volumetric: post.volumetric,
-      bloomTone: post.gradePass,
-      smaaGrain: post.finishPass,
-      output: post.output,
-    })) profiler.wrap(pass, 'render', name);
-    post.setSize(window.innerWidth, window.innerHeight);
-  }
-  return post;
-}
+// Postprocessing (N8AO, volumetrija, selektivni bloom, SMAA…).
+const post = new PostPipeline(renderer, scene, camMono);
+post.setQuality(quality);
+for (const [name, pass] of Object.entries({
+  render: post.renderPass,
+  n8ao: post.n8ao,
+  volumetric: post.volumetric,
+  bloomTone: post.gradePass,
+  smaaGrain: post.finishPass,
+  output: post.output,
+})) profiler.wrap(pass, 'render', name);
+post.setSize(window.innerWidth, window.innerHeight);
 
 // ?dpr=2 — samo za testiranje (emulacija retina zaslona u headless pregledniku).
 const forcedDpr = Number(new URLSearchParams(location.search).get('dpr')) || 0;
 
-// Dinamička rezolucija (kao u igrama): AAA scene drže 60 fps tako da pri
-// preopterećenju malo spuste render scale, a kad ima rezerve vrate ga gore.
+// Dinamička rezolucija (kao u igrama): robot drži 60 fps tako da pri
+// preopterećenju malo spusti render scale, a kad ima rezerve vrati ga gore.
 const adaptive = { ratio: null, frames: [], lastChange: 0, lastProbe: 0 };
 
 function targetPixelRatio() {
   const device = forcedDpr || window.devicePixelRatio;
-  if (!active?.usesPost) return Math.min(device, 2);
   const q = QUALITY[quality];
   const cap = Math.min(device, q.pixelRatio);
   if (adaptive.ratio === null) adaptive.ratio = cap;
@@ -134,7 +126,7 @@ function applyPixelRatio() {
 }
 
 function adaptResolution(now, frameMs) {
-  if (!active?.usesPost || forcedDpr) return;
+  if (phase === 'loading' || forcedDpr) return;
   const f = adaptive.frames;
   f.push(frameMs);
   if (f.length > 90) f.shift();
@@ -168,81 +160,58 @@ function resize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
   anaglyph.setSize(size.x, size.y);
-  post?.setSize(window.innerWidth, window.innerHeight);
-  for (const p of presets) p.setSize?.(size.x, size.y);
+  post.setSize(window.innerWidth, window.innerHeight);
 }
 window.addEventListener('resize', resize);
 
-// ---------- Scene ----------
-const presets = [new BoxScene(), new ModelScene(), new MuseumScene(renderer), new RobotScene(renderer)];
-let active = null;
+// ---------- Robot ----------
+// Faze: 'loading' (geometrija u workerima, HDR, fontovi) → 'compiling' (shaderi se
+// kompajliraju paralelno) → 'live' (robot se crta). Dok robot nije na ekranu,
+// preko svega stoji crni ekran za učitavanje; praćenje glave i ruku već radi.
+const robot = new RobotScene(renderer);
+const robotReady = robot.init();
+let phase = 'loading';
 let laidOut = { w: 0, h: 0 };
-let pendingPreset = null;
-let compiling = false; // dok se shaderi nove scene kompajliraju paralelno, ne crtamo
+let firstFrameAt = 0;
+let stableFrames = 0;
+let revealed = false;
+let postWarmed = false;
 
-async function setPreset(index) {
-  const next = presets[index];
-  if (!next || next === active) return;
-  if (next.init && !next.isReady) {
-    pendingPreset = index;
-    hud.toast(`Pripremam scenu ${index + 1}: ${next.name}…`, 60000);
-    try {
-      await next.init();
-      next.isReady = true;
-    } catch (err) {
-      console.error(err);
-      hud.toast(`Scena ${index + 1} se nije mogla pripremiti: ${err.message ?? err}`, 6000);
-      pendingPreset = null;
-      return;
-    }
-    if (pendingPreset !== index) return; // korisnik je u međuvremenu odabrao drugu scenu
-  }
-  pendingPreset = null;
-  switchTo(next, index);
+robotReady.then(activateRobot, (err) => {
+  console.error(err);
+  loader.fail(`Robot se nije mogao pripremiti: ${err?.message ?? err}`);
+});
+
+function activateRobot() {
+  world.add(robot.group);
+  resize();
+  robot.activate(scene, { post, renderer });
+  robot.setQuality(QUALITY[quality]);
+  laidOut = { w: 0, h: 0 }; // forsiraj layout
+  // Robot ima puno materijala: kompajliraj ih paralelno (KHR_parallel_shader_compile)
+  // umjesto da prvi frame zamrzne praćenje glave.
+  phase = 'compiling';
+  const done = () => {
+    robot.compiled = true;
+    phase = 'live';
+  };
+  renderer.compileAsync(scene, camMono).then(done, done);
 }
 
-function switchTo(next, index) {
-  if (active) {
-    world.remove(active.group);
-    active.deactivate?.();
+/** Poziva se nakon svakog iscrtanog framea dok se robot ne otkrije. */
+function onRobotFrame(now, frameMs) {
+  if (!firstFrameAt) {
+    firstFrameAt = now;
+    performance.mark('robot:first-frame');
+    return;
   }
-  director.reset(true); // izrez kadra pripada sceni
-  active = next;
-  world.add(active.group);
-
-  // Globalno stanje vraća se na zadano; scena ga zatim prilagođava.
-  scene.environment = defaultEnvironment;
-  scene.environmentIntensity = 1;
-  scene.environmentRotation.set(0, 0, 0);
-  scene.fog = null;
-  const usesPost = !!active.usesPost;
-  renderer.toneMapping = usesPost ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1;
-  const shadowType = usesPost ? THREE.BasicShadowMap : THREE.PCFShadowMap;
-  if (renderer.shadowMap.type !== shadowType) {
-    renderer.shadowMap.type = shadowType;
-    scene.traverse((o) => {
-      const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
-      for (const m of mats) m.needsUpdate = true;
-    });
-  }
-  renderer.shadowMap.autoUpdate = !usesPost;
-  resize();
-  active.activate(scene, { post: usesPost ? getPost() : null, renderer });
-  if (usesPost) active.setQuality?.(QUALITY[quality]);
-  laidOut = { w: 0, h: 0 }; // forsiraj layout za novu scenu
-  hud.toast(`Scena ${index + 1}: ${active.name}`, 1400);
-  if (active.orbitTarget) hud.badge(cameraMode() === 'orbit' ? 'ORBIT' : 'WINDOW');
-  // AAA scene imaju puno materijala: kompajliraj ih paralelno (KHR_parallel_shader_compile)
-  // umjesto da prvi frame zamrzne praćenje glave.
-  if (usesPost && !active.compiled) {
-    compiling = true;
-    const done = () => {
-      compiling = false;
-      active.compiled = true;
-    };
-    renderer.compileAsync(scene, camMono).then(done, done);
-  }
+  stableFrames = frameMs < REVEAL.stableFrameMs ? stableFrames + 1 : 0;
+  if (stableFrames < REVEAL.stableFrames && now - firstFrameAt < REVEAL.maxWaitMs) return;
+  revealed = true;
+  loader.reveal();
+  hud.badge(cameraMode === 'orbit' ? 'ORBIT' : 'WINDOW');
+  if (pendingToast) hud.toast(...pendingToast);
+  pendingToast = null;
 }
 
 function setQuality(name) {
@@ -253,17 +222,14 @@ function setQuality(name) {
   } catch {
     /* bez pohrane */
   }
-  post?.setQuality(name);
-  for (const p of presets) if (p.isReady) p.setQuality?.(QUALITY[name]);
+  post.setQuality(name);
+  if (phase !== 'loading') robot.setQuality(QUALITY[name]);
   resize();
   hud.toast(`Kvaliteta: ${name === 'high' ? 'visoka' : 'niska'}`, 1400);
 }
 
-loadDefaultHead()
-  .then((head) => presets[1].content ?? presets[1].setContent(head, 'mesh'))
-  .catch((err) => console.warn('Zadani model nije učitan', err));
-
 // ---------- UI ----------
+const loader = new Loader();
 const hud = new Hud();
 const debug = new DebugOverlay();
 const vision = new VisionSource();
@@ -281,24 +247,17 @@ const panel = new CalibrationPanel(settings, (s) => {
 const orbit = new OrbitController(orbitSettings);
 const orbitPanel = new OrbitPanel(orbitSettings, () => {});
 
-function activeIndex() {
-  return presets.indexOf(active);
-}
-
-function cameraMode() {
-  if (!active?.orbitTarget) return 'window';
-  return cameraModes[activeIndex()] ?? 'window';
+// Obavijesti iz vremena učitavanja (kamera) pokažu se tek kad se robot otkrije.
+let pendingToast = null;
+function notify(message, ms) {
+  if (revealed) hud.toast(message, ms);
+  else pendingToast = [message, ms];
 }
 
 function setCameraMode(mode) {
-  if (!active?.orbitTarget) {
-    hud.badge('WINDOW');
-    hud.toast('Ova scena podržava samo window način', 1600);
-    return;
-  }
-  cameraModes[activeIndex()] = mode;
+  cameraMode = mode;
   try {
-    localStorage.setItem(CAMERA_MODES_KEY, JSON.stringify(cameraModes));
+    localStorage.setItem(CAMERA_MODE_KEY, mode);
   } catch {
     /* bez pohrane */
   }
@@ -312,53 +271,30 @@ let cameraFailed = false;
 let headOverride = null; // za automatske testove (window.__ht.setHead)
 let handOverride = null; // za automatske testove (window.__ht.setHand)
 
-// Generiranje geometrije (workeri) i HDRI krenu odmah u pozadini.
-setTimeout(() => {
-  for (const p of presets) p.preload?.();
-}, 400);
-
-// Stranica se otvara na robotu (scena 4); ?scene=1…4 bira drugu početnu scenu.
-// Kutija (scena 1) je odmah aktivna kao podloga dok se robot priprema.
-const DEFAULT_SCENE = 4;
-const sceneParam = Number(new URLSearchParams(location.search).get('scene'));
-const startScene = sceneParam >= 1 && sceneParam <= presets.length ? sceneParam : DEFAULT_SCENE;
-setPreset(0);
-if (startScene !== 1) setPreset(startScene - 1);
 resize();
 
 tracker
   .start()
-  .then(() => hud.toast('Kamera spremna — pomakni glavu', 2000))
+  .then(() => notify('Kamera spremna — pomakni glavu', 2000))
   .catch((err) => {
     cameraFailed = true;
     console.warn('Kamera nije dostupna', err);
-    hud.toast('Kamera nije dostupna — miš glumi glavu (kotačić = udaljenost)', 4200);
+    notify('Kamera nije dostupna — miš glumi glavu (kotačić = udaljenost)', 4200);
   });
 
+// Vlastiti .glb/.gltf postaje glava robota i dobiva iste oči.
 setupDropzone(async (files) => {
   const picked = classifyFiles(files);
   if (!picked) {
-    hud.toast('Podržano: .glb, .gltf, .ply, .splat, .spz, .ksplat');
+    hud.toast('Podržano: .glb i .gltf (uz pripadne .bin i teksture)');
     return;
   }
   hud.toast(`Učitavam ${picked.main.name}…`, 60000);
   try {
-    const robot = presets[3];
-    if (active === robot && picked.kind === 'mesh') {
-      // Na sceni robota vlastiti model postaje glava i dobiva iste oči.
-      const obj = await loadMeshFiles(picked.main, picked.all);
-      robot.setCustomHead(obj);
-      hud.toast(`${picked.main.name} je nova glava robota · R okreni · [ ] veličina · ↑↓ oči`, 4000);
-      return;
-    }
-    const obj =
-      picked.kind === 'mesh'
-        ? await loadMeshFiles(picked.main, picked.all)
-        : await loadSplatFile(picked.main, renderer, scene);
-    presets[1].setContent(obj, picked.kind);
-    setPreset(1);
-    laidOut = { w: 0, h: 0 };
-    hud.toast(`${picked.main.name} učitan · R okreni · [ ] veličina · V vrtnja`, 3500);
+    const obj = await loadMeshFiles(picked.main, picked.all);
+    await robotReady;
+    robot.setCustomHead(obj);
+    hud.toast(`${picked.main.name} je nova glava robota · R okreni · [ ] veličina · ↑↓ oči`, 4000);
   } catch (err) {
     console.error(err);
     hud.toast(`Ne mogu učitati ${picked.main.name}: ${err.message ?? err}`, 5000);
@@ -388,14 +324,13 @@ window.addEventListener('keydown', (e) => {
       hud.toast('Centar: trenutni položaj glave', 1400);
       break;
     case 'g': {
-      const mode = cameraMode();
-      gazeModes[mode] = (gazeModes[mode] % 3) + 1;
+      gazeModes[cameraMode] = (gazeModes[cameraMode] % 3) + 1;
       const labels = {
         1: 'Pogled: oči prate do ±25°, zatim gledaju naprijed',
         2: 'Pogled: oči uvijek prate',
         3: 'Pogled: glava i oči prate',
       };
-      hud.toast(labels[gazeModes[mode]], 1800);
+      hud.toast(labels[gazeModes[cameraMode]], 1800);
       break;
     }
     case 's':
@@ -403,7 +338,7 @@ window.addEventListener('keydown', (e) => {
       hud.toast(stereo ? 'Anaglif uključen — crveno lijevo, cijan desno' : 'Anaglif isključen', 1600);
       break;
     case 'm':
-      setCameraMode(cameraMode() === 'orbit' ? 'window' : 'orbit');
+      setCameraMode(cameraMode === 'orbit' ? 'window' : 'orbit');
       break;
     case 'k':
       mouseMode = !mouseMode;
@@ -417,25 +352,19 @@ window.addEventListener('keydown', (e) => {
     case 'u':
       hud.toggle();
       break;
-    case 'v':
-      presets[1].turntable = !presets[1].turntable;
-      break;
     case 'r':
-      if (active === presets[3]) presets[3].flipCustomHead();
-      else presets[1].flip();
+      robot.flipCustomHead();
       break;
     case '[':
-      if (active === presets[3]) presets[3].scaleCustomHead(1 / 1.08);
-      else presets[1].scaleBy(1 / 1.15);
+      robot.scaleCustomHead(1 / 1.08);
       break;
     case ']':
-      if (active === presets[3]) presets[3].scaleCustomHead(1.08);
-      else presets[1].scaleBy(1.15);
+      robot.scaleCustomHead(1.08);
       break;
     case 'arrowup':
     case 'arrowdown':
-      if (active === presets[3]) {
-        presets[3].nudgeEyes(e.key === 'ArrowUp' ? 0.25 : -0.25);
+      if (robot.custom) {
+        robot.nudgeEyes(e.key === 'ArrowUp' ? 0.25 : -0.25);
         e.preventDefault();
       }
       break;
@@ -443,16 +372,10 @@ window.addEventListener('keydown', (e) => {
       setQuality(quality === 'high' ? 'low' : 'high');
       break;
     case 'e':
-      if (presets[3].isReady) {
-        const name = presets[3].toggleEyeColor();
+      if (phase !== 'loading') {
+        const name = robot.toggleEyeColor();
         hud.toast(`Boja očiju: ${name}`, 1200);
       }
-      break;
-    case '1':
-    case '2':
-    case '3':
-    case '4':
-      setPreset(Number(e.key) - 1);
       break;
     case 'escape':
       panel.toggle(false);
@@ -509,7 +432,7 @@ function updatePose(now, dt, rect) {
   }
 
   if (mouseMode || cameraFailed || !tracker.ready) {
-    // Miš glumi glavu: ručno (M), bez kamere, ili dok se kamera još pokreće.
+    // Miš glumi glavu: ručno (K), bez kamere, ili dok se kamera još pokreće.
     pose.tracked = [...mouse.update(rect, dt, mouseHand.capturesMouse)];
     pose.roll = 0;
     pose.weight = 1;
@@ -542,18 +465,6 @@ function updatePose(now, dt, rect) {
   return source;
 }
 
-// ---------- Doseg ruke ----------
-// Scena zadaje točku interesa i koliko je ispred nje vrh prsta u neutralnom
-// položaju ruke (near) i pri punom dosegu prema ekranu (far), u world cm.
-const reachTarget = new THREE.Vector3();
-function sceneReach(rect) {
-  const r = active.handReach?.();
-  if (r) return r;
-  if (active.orbitTarget) active.orbitTarget(reachTarget);
-  else reachTarget.set(rect.cx, rect.cy, -30);
-  return { target: reachTarget, near: 30, far: 0, minCam: 12 };
-}
-
 // ---------- Petlja ----------
 const pa = new THREE.Vector3();
 const pb = new THREE.Vector3();
@@ -579,7 +490,7 @@ function frame() {
 
   const rect = getCanvasRect(settings);
   if (Math.abs(rect.width - laidOut.w) > 0.05 || Math.abs(rect.height - laidOut.h) > 0.05) {
-    for (const p of presets) p.layout(rect);
+    robot.layout(rect);
     laidOut = { w: rect.width, h: rect.height };
   }
   world.position.set(rect.cx, rect.cy, 0);
@@ -595,13 +506,21 @@ function frame() {
   orbitHead.fromArray(source === 'test' ? pose.eye : pose.tracked);
   const orbitWeight = source === 'kamera' || source === 'centar' ? smoothstep(pose.weight) : 1;
   orbit.update(now, dt, orbitHead, orbitWeight);
-  if (compiling) {
+  if (phase !== 'live') {
+    // Robot se još priprema (ili mu se kompajliraju shaderi): praćenje radi, a robot se ne crta.
+    // Dok workeri generiraju geometriju, glavna nit je slobodna: jedan prazan prolaz kroz
+    // postprocessing (ispod ekrana za učitavanje) kompajlira njegove shadere sada, a ne u
+    // prvom frameu robota.
+    if (!postWarmed) {
+      postWarmed = true;
+      post.render(camMono, dt, null);
+    }
     vision.afterRender();
     debug.tick(now);
     return;
   }
 
-  const mode = cameraMode();
+  const mode = cameraMode;
   // Oči: centar ± pola IPD-a duž linije očiju (uzima u obzir nagib glave).
   eyeC.fromArray(pose.eye);
   half.set(Math.cos(pose.roll), Math.sin(pose.roll), 0).multiplyScalar(settings.ipd / 2);
@@ -609,10 +528,10 @@ function frame() {
 
   if (mode === 'orbit') {
     // Kamera kruži oko točke interesa; pri neutralnom položaju vidi isto kao window.
-    const target = active.orbitTarget(orbitTarget);
+    const target = robot.orbitTarget(orbitTarget);
     neutralEye.set(rect.cx, rect.cy, REST_DISTANCE);
     const vfov = THREE.MathUtils.radToDeg(2 * Math.atan(rect.height / 2 / REST_DISTANCE));
-    orbit.apply(camMono, target, neutralEye, vfov, rect.width / rect.height, active.orbitLimits?.() ?? {});
+    orbit.apply(camMono, target, neutralEye, vfov, rect.width / rect.height, robot.orbitLimits());
     if (stereo) orbit.applyStereo(camMono, camLeft, camRight, (settings.ipd / 2) * settings.stereoStrength);
     mono.copy(camMono.position);
   } else {
@@ -634,7 +553,8 @@ function frame() {
 
   // Redateljski okvir: izrez kadra (zoom + reframe) preko projekcije kamere; sidro
   // se računa iz neizrezane kamere, a zrake ruku iz izrezane (pokazuje se ono što se vidi).
-  const reach = sceneReach(rect);
+  // Doseg ruke: neutralno ~45 cm ispred glave robota, puni doseg do lica.
+  const reach = robot.handReach();
   camMono.updateMatrixWorld();
   director.update(now, dt, handInput.ctx, camMono, camMono.position.distanceTo(reach.target));
   director.apply(camMono);
@@ -653,34 +573,26 @@ function frame() {
     override: handOverride,
   });
 
-  active.update(t, dt, {
+  robot.update(t, dt, {
     eye: mode === 'orbit' ? camMono.position.toArray() : pose.eye,
     rect,
     cameraMode: mode,
     gazeMode: gazeModes[mode],
     hand,
   });
-  markers.update(hand, camMono, dt, active.displayScale ?? 1);
+  markers.update(hand, camMono, dt, robot.displayScale ?? 1);
 
-  if (active.usesPost) {
-    // Sjene se računaju jednom po frameu (refleksija, oba oka i bloom ih dijele).
-    renderer.shadowMap.needsUpdate = true;
-    profiler.measure('beforeRender', () =>
-      active.beforeRender?.(renderer, scene, mode === 'orbit' || !stereo ? mono : eyeC, rect, camMono, mode),
-    );
-    const p = getPost();
-    if (stereo) {
-      p.render(camLeft, dt, anaglyph.left);
-      p.render(camRight, dt, anaglyph.right);
-      anaglyph.combine();
-    } else {
-      p.render(camMono, dt, null);
-    }
-  } else if (stereo) {
-    anaglyph.render(scene, camLeft, camRight);
+  // Sjene se računaju jednom po frameu (oba oka i bloom ih dijele).
+  renderer.shadowMap.needsUpdate = true;
+  profiler.measure('beforeRender', () => robot.beforeRender());
+  if (stereo) {
+    post.render(camLeft, dt, anaglyph.left);
+    post.render(camRight, dt, anaglyph.right);
+    anaglyph.combine();
   } else {
-    renderer.render(scene, camMono);
+    post.render(camMono, dt, null);
   }
+  if (!revealed) onRobotFrame(now, frameMs);
 
   // Novi frame kamere ide u worker tek sad, kad je ovaj frame predan GPU-u.
   vision.afterRender();
@@ -690,9 +602,9 @@ function frame() {
     mode === 'orbit'
       ? `ORBIT az ${orbit.az.toFixed(1)}° el ${(orbit.effectiveEl ?? orbit.el).toFixed(1)}° zoom ${(1 / orbit.zoom).toFixed(2)}×${orbit.calibrating ? ' · kalibriram' : ''}`
       : 'WINDOW';
-  debug.draw({ tracker, hands, hand, vision, source, eye: pose.eye, rect, stereo, sceneName: active.name, quality: active.usesPost ? `${quality} ${renderer.getPixelRatio().toFixed(2)}×` : null, orbitInfo });
+  debug.draw({ tracker, hands, hand, vision, source, eye: pose.eye, rect, stereo, sceneName: robot.name, quality: `${quality} ${renderer.getPixelRatio().toFixed(2)}×`, orbitInfo });
   panel.showMeasurement(pose.eye, source);
-  orbitPanel.showState(mode === 'orbit' ? orbitInfo : 'Trenutna scena je u WINDOW načinu (M za orbit).');
+  orbitPanel.showState(mode === 'orbit' ? orbitInfo : 'Robot je u WINDOW načinu (M za orbit).');
 }
 renderer.setAnimationLoop(frame);
 
@@ -754,27 +666,26 @@ window.__ht = {
   vision,
   hands,
   tracker,
-  setPreset: (i) => setPreset(i),
   setQuality: (q) => setQuality(q),
   setStereo: (b) => (stereo = !!b),
   setCameraMode: (m) => setCameraMode(m),
-  setGazeMode: (n) => (gazeModes[cameraMode()] = n),
+  setGazeMode: (n) => (gazeModes[cameraMode] = n),
   /** Orbit bez glave: { az, el, zoom } (zoom = faktor udaljenosti), null vraća upravljanje glavi. */
   setOrbit: (o) => (orbit.override = o ? { snap: true, ...o } : null),
   orbit,
   state: () => ({
     fps: debug.fps,
-    scene: active?.name,
-    ready: presets.map((p) => !p.init || !!p.isReady),
+    scene: robot.name,
+    phase,
+    ready: revealed,
+    cameraMode,
     quality,
     pixelRatio: renderer.getPixelRatio(),
     drawCalls: renderer.info.render.calls,
     triangles: renderer.info.render.triangles,
   }),
-  presets,
-  get post() {
-    return post;
-  },
+  robot,
+  post,
   benchmark,
   profile: (on) => {
     if (on !== undefined) profiler.enabled = !!on;

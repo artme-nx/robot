@@ -1,4 +1,4 @@
-// Postprocessing za "AAA" scene (3 i 4), pmndrs postprocessing + N8AO:
+// Postprocessing robota, pmndrs postprocessing + N8AO:
 //   RenderPass → N8AO (ambijentalna okluzija) → volumetrijski snop
 //   → [selektivni bloom + tone mapping] → [SMAA + vinjeta + film grain] → izlaz.
 // Bez dubinske oštrine — off-axis projekcija mora ostati oštra.
@@ -22,7 +22,6 @@ import {
 } from 'postprocessing';
 import { N8AOPostPass } from 'n8ao';
 import { VolumetricSpotPass } from './volumetric.js';
-import { GlassRipplePass } from './ripple.js';
 
 class OutputPass extends Pass {
   constructor() {
@@ -63,7 +62,6 @@ export const QUALITY = {
     volSteps: 26,
     smaa: SMAAPreset.HIGH,
     bloomLevels: 8,
-    reflectionScale: 0.5,
     shadowMap: 2048,
   },
   low: {
@@ -76,7 +74,6 @@ export const QUALITY = {
     volSteps: 18,
     smaa: SMAAPreset.MEDIUM,
     bloomLevels: 6,
-    reflectionScale: 0.3,
     shadowMap: 1024,
   },
 };
@@ -112,8 +109,6 @@ export class PostPipeline {
     });
 
     this.volumetric = new VolumetricSpotPass();
-    // Titranje stakla (samo dok traje val nakon udarca; inače isključeno).
-    this.ripple = new GlassRipplePass();
 
     this.bloom = new SelectiveBloomEffect(scene, camera, {
       mipmapBlur: true,
@@ -138,7 +133,6 @@ export class PostPipeline {
     this.composer.addPass(this.renderPass);
     this.composer.addPass(this.n8ao);
     this.composer.addPass(this.volumetric);
-    this.composer.addPass(this.ripple);
     this.composer.addPass(this.gradePass);
     this.composer.addPass(this.finishPass);
     this.composer.addPass(this.output);
@@ -146,7 +140,7 @@ export class PostPipeline {
     this.output.renderToScreen = true;
   }
 
-  /** Postavke po sceni: bloom, AO, tone mapping, volumetrija. */
+  /** Postavke scene: bloom, AO, tone mapping, volumetrija. */
   configure(o = {}) {
     if (o.toneMapping) this.toneMapping.mode = ToneMappingMode[o.toneMapping];
     if (o.bloom) {
@@ -200,7 +194,6 @@ export class PostPipeline {
     this.composer.setMainCamera(camera);
     this.n8ao.camera = camera;
     this.volumetric.mainCamera = camera;
-    this.ripple.mainCamera = camera;
     // Na ekran ide izravno zadnji efekt (sRGB); u render target (anaglif) preko OutputPassa.
     const toScreen = target === null;
     this.finishPass.renderToScreen = toScreen;

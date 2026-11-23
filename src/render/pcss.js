@@ -4,7 +4,6 @@
 // dubinu blokera. Rezultat su meke sjene koje su oštre uz dodir s podlogom i
 // sve mekše što je bloker dalje od plohe (contact hardening).
 //
-// Scene 1 i 2 koriste PCFShadowMap i ova zakrpa ih ne dira.
 // Konvencija za PCSS spotove: shadow.camera.near = PCSS_NEAR, far = PCSS_FAR,
 // shadow.radius = veličina izvora svjetla izražena u UV jedinicama na near ravnini
 // (vidi pcssLightSize()).

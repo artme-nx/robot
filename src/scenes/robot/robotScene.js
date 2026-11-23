@@ -1,4 +1,4 @@
-// Scena 4 — "Robot": humanoidno poprsje u tamnom studiju iza ekrana.
+// Robot: humanoidno poprsje u tamnom studiju iza ekrana.
 // Hard-surface glava (SDF paneli s pravim procjepima), mehanički vrat,
 // mehaničke oči koje gledaju točno u gledateljeve oči.
 
@@ -130,13 +130,6 @@ export class RobotScene {
   init() {
     if (!this.ready) this.ready = this.#build();
     return this.ready;
-  }
-
-  /** Pokreni teške korake (HDR, generiranje geometrije) unaprijed u pozadini. */
-  preload() {
-    generateSDF('robotHead', {});
-    generateSDF('robotBody', {});
-    loadStudioHDR();
   }
 
   async #build() {

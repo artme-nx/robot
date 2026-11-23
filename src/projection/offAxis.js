@@ -49,7 +49,7 @@ export function applyOffAxis(camera, pa, pb, pc, pe, near = 1, far = 1000) {
   camera.position.copy(pe);
   camera.updateMatrixWorld(true);
 
-  // Okvirni FOV/aspect da pomoćni sustavi (npr. sortiranje splatova) imaju smislene vrijednosti.
+  // Okvirni FOV/aspect da pomoćni sustavi (postprocessing, raycast) imaju smislene vrijednosti.
   camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan((t - b) / 2 / near));
   camera.aspect = (r - l) / (t - b);
   camera.near = near;

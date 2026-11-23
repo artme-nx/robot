@@ -48,20 +48,7 @@ export class AnaglyphRenderer {
     this.right.setSize(width, height);
   }
 
-  render(scene, camLeft, camRight) {
-    const r = this.renderer;
-    const prev = r.getRenderTarget();
-    r.setRenderTarget(this.left);
-    r.clear();
-    r.render(scene, camLeft);
-    r.setRenderTarget(this.right);
-    r.clear();
-    r.render(scene, camRight);
-    r.setRenderTarget(prev);
-    r.render(this.quadScene, this.quadCamera);
-  }
-
-  /** Spoji već iscrtane slike (npr. iz postprocessing pipelinea) na ekran. */
+  /** Spoji slike koje je postprocessing pipeline iscrtao u left/right na ekran. */
   combine() {
     const r = this.renderer;
     r.setRenderTarget(null);
