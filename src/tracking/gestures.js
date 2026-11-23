@@ -120,18 +120,20 @@ const ENTER = {
   pinch: (f) => f.pinchDist < 0.27 && f.indexFar > 1.02 && f.ext[1] > 0.08,
   // Šaka: svi prsti savijeni i palac uvučen (podignut palac nije šaka).
   fist: (f) => Math.max(f.ext[1], f.ext[2], f.ext[3], f.ext[4]) < 0.28 && f.indexFar < 1.25 && f.ext[0] < 0.62,
-  point: (f) => f.ext[1] > 0.72 && Math.max(f.ext[2], f.ext[3], f.ext[4]) < 0.4 && f.pinchDist > 0.38,
+  // Kažiprst: blaži uvjet (opušteno savijeni ostali prsti, palac smije biti blizu)
+  // jer ljudi pokazuju prema ekranu nesavršeno. Ne preklapa se s pinch/šaka/dlan.
+  point: (f) => f.ext[1] > 0.6 && Math.max(f.ext[2], f.ext[3], f.ext[4]) < 0.5 && f.pinchDist > 0.3,
   open: (f) => Math.min(f.ext[1], f.ext[2], f.ext[3], f.ext[4]) > 0.72 && f.ext[0] > 0.4,
 };
 const STAY = {
   pinch: (f) => f.pinchDist < 0.42 && f.indexFar > 0.9,
   fist: (f) => Math.max(f.ext[1], f.ext[2], f.ext[3], f.ext[4]) < 0.5,
-  point: (f) => f.ext[1] > 0.48 && Math.max(f.ext[2], f.ext[3], f.ext[4]) < 0.62 && f.pinchDist > 0.28,
+  point: (f) => f.ext[1] > 0.4 && Math.max(f.ext[2], f.ext[3], f.ext[4]) < 0.7 && f.pinchDist > 0.22,
   open: (f) => Math.min(f.ext[1], f.ext[2], f.ext[3], f.ext[4]) > 0.5 && f.ext[0] > 0.2,
 };
 // Prioritet kad vrijedi više uvjeta, i vrijeme potvrde (ms) prije aktivacije.
 const PRIORITY = { pinch: 4, fist: 3, point: 2, open: 1, none: 0 };
-const CONFIRM = { pinch: 55, fist: 140, point: 85, open: 110 };
+const CONFIRM = { pinch: 55, fist: 140, point: 70, open: 110 };
 const COOLDOWN = 160; // ms: ista gesta ne može odmah ponovno ući nakon izlaska
 
 export class GestureMachine {

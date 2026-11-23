@@ -1,11 +1,15 @@
 // Ponašanje pogleda: oči gledaju točno u 3D položaj gledateljevih očiju
 // (kamera), uz realistične sakade, mikrosakade i tremor; glava i vrat slijede s
 // kašnjenjem i inercijom (opruga s prigušenjem, "servo" mrtva zona); blenda se
-// sužava kad se gledatelj približi; povremeno mehaničko treptanje.
+// sužava kad se gledatelj približi; treptaj je zatvarač fotoaparata (iris-blenda).
 
 import * as THREE from 'three';
 
 const rand = (a, b) => a + Math.random() * (b - a);
+
+// Treptaj = zatvarač: lamele se brzo zatvore do kraja, kratko ostanu zatvorene
+// (da se vidi i na snimci od 30 fps) pa se oštro otvore. Sekunde.
+const SHUTTER = { close: 0.08, hold: 0.04, open: 0.16, doubleGap: 0.09, doubleChance: 0.15 };
 
 /** Kritično prigušena opruga po komponentama (2D kutovi). */
 class Spring2 {
@@ -56,14 +60,13 @@ export class GazeController {
     this.jolt = new THREE.Vector2();
     this.nextJolt = rand(3, 7);
 
-    // Blenda i treptanje.
+    // Blenda i treptanje (zatvarač).
     this.aperture = 0.5;
     this.apertureV = 0;
-    this.blink = 0;
-    this.blinkT = -1;
+    this.blinkT = -1; // < 0: nema treptaja u tijeku
     this.nextBlink = rand(2.5, 5);
     this.doubleBlink = false;
-    this.irisBlink = false;
+    this.doubleWait = 0; // stanka prije drugog "klika"
     this.irisClose = 0;
     this.time = 0;
   }
@@ -71,9 +74,10 @@ export class GazeController {
   /**
    * @param {number} dt
    * @param {number} viewerDist udaljenost gledatelja od ekrana (cm)
-   * @param {THREE.Vector2} toViewer smjer prema gledatelju iz glave (yaw, pitch u rad) u neutralnom položaju
+   * @param {THREE.Vector2} headGoal ciljni kut glave (yaw, pitch u rad); robot odlučuje
+   *   koliki dio kuta prema gledatelju (ili prstu) glava prati
    */
-  update(dt, viewerDist, toViewer) {
+  update(dt, viewerDist, headGoal) {
     this.time += dt;
     const t = this.time;
 
@@ -109,8 +113,8 @@ export class GazeController {
       Math.cos(t * 41.0 + this.tremorPhase) * 0.012,
     );
 
-    // --- Glava: slijedi dio kuta prema gledatelju, s mrtvom zonom (servo) ---
-    const goal = new THREE.Vector2(toViewer.x * 0.55, toViewer.y * 0.45);
+    // --- Glava: slijedi zadani kut, s mrtvom zonom (servo) ---
+    const goal = headGoal.clone();
     if (goal.distanceTo(this.servoHold) > THREE.MathUtils.degToRad(1.4)) this.servoHold.copy(goal);
     this.nextJolt -= dt;
     if (this.nextJolt <= 0) {
@@ -130,32 +134,36 @@ export class GazeController {
     this.aperture += this.apertureV * dt;
     this.brightness = THREE.MathUtils.lerp(1.65, 0.85, near);
 
-    // --- Treptanje kapcima ili zatvaranjem blende ---
+    // --- Treptanje: zatvarač fotoaparata (iris-blenda), ponekad dvaput zaredom ---
     this.nextBlink -= dt;
-    if (this.blinkT < 0 && this.nextBlink <= 0) {
+    if (this.doubleWait > 0) {
+      this.doubleWait -= dt;
+      if (this.doubleWait <= 0) this.blinkT = 0;
+    } else if (this.blinkT < 0 && this.nextBlink <= 0) {
       this.blinkT = 0;
-      this.irisBlink = Math.random() < 0.28;
-      this.doubleBlink = !this.irisBlink && Math.random() < 0.18;
+      this.doubleBlink = Math.random() < SHUTTER.doubleChance;
       this.nextBlink = rand(2.8, 6.5);
     }
-    this.blink = 0;
     this.irisClose = 0;
     if (this.blinkT >= 0) {
       this.blinkT += dt;
-      const dur = this.irisBlink ? 0.42 : 0.2;
-      const p = this.blinkT / dur;
-      // Brzo zatvaranje, kratko zadržavanje, sporije otvaranje.
-      const v = p < 0.3 ? p / 0.3 : p < 0.42 ? 1 : Math.max(0, 1 - (p - 0.42) / 0.58);
-      const eased = v * v * (3 - 2 * v);
-      if (this.irisBlink) this.irisClose = eased;
-      else this.blink = eased;
-      if (p >= 1) {
+      const { close, hold, open } = SHUTTER;
+      const t = this.blinkT;
+      if (t < close) {
+        const p = t / close;
+        this.irisClose = p * p; // ubrzava i "škljocne" na kraju
+      } else if (t < close + hold) {
+        this.irisClose = 1;
+      } else {
+        const p = Math.min(1, (t - close - hold) / open);
+        this.irisClose = (1 - p) * (1 - p); // oštar početak, mekano dosjedanje
+      }
+      if (t >= close + hold + open) {
+        this.blinkT = -1;
         if (this.doubleBlink) {
-          // Odmah drugi treptaj.
+          // Drugi "klik" nakon kratke stanke.
           this.doubleBlink = false;
-          this.blinkT = 0;
-        } else {
-          this.blinkT = -1;
+          this.doubleWait = SHUTTER.doubleGap;
         }
       }
     }
@@ -165,9 +173,17 @@ export class GazeController {
       head: head.clone(),
       neck: neck.clone(),
       aperture: Math.max(0.0, this.aperture * (1 - this.irisClose)),
-      brightness: this.brightness * (1 - 0.7 * this.irisClose),
-      blink: this.blink,
+      // Svjetlo oka izlazi kroz otvor blende: zatvoren zatvarač ga gotovo ugasi.
+      brightness: this.brightness * (1 - 0.92 * this.irisClose),
+      shutter: this.irisClose,
     };
+  }
+
+  /** Okini zatvarač odmah (za testove i snimanje). */
+  blinkNow() {
+    this.blinkT = 0;
+    this.doubleBlink = false;
+    this.doubleWait = 0;
   }
 
   #startSaccade(x, y) {

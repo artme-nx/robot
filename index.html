@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="hr">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <title>Robot | Artificial Media</title>
-    <meta name="description" content="Robot iza ekrana: head-coupled perspective s praćenjem glave i ruku preko web kamere." />
+    <meta name="description" content="A robot behind your screen that looks you in the eyes — head and hand tracking through your webcam." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='6' width='24' height='18' rx='2' fill='none' stroke='%23d8dde6' stroke-width='2'/%3E%3Ccircle cx='16' cy='15' r='3' fill='%2368c3ff'/%3E%3C/svg%3E" />
     <!-- Crno od prvog iscrtavanja, i prije nego što stigne CSS. -->
     <style>html, body { background: #000; }</style>
@@ -14,17 +14,32 @@
     <canvas id="view"></canvas>
 
     <div id="hud" class="hud">
-      <div class="hud__status"><span class="dot" id="status-dot"></span><span id="status-text">Pokrećem kameru…</span></div>
+      <div class="hud__status"><span class="dot" id="status-dot"></span><span id="status-text">Starting camera…</span></div>
       <div class="hud__keys">
-        <kbd>M</kbd> orbit/window <kbd>N</kbd> centar
-        <kbd>T</kbd> orbit panel <kbd>G</kbd> pogled <kbd>E</kbd> boja očiju <kbd>Q</kbd> kvaliteta
-        <kbd>F</kbd> cijeli zaslon <kbd>D</kbd> debug <kbd>C</kbd> kalibracija <kbd>S</kbd> stereo <kbd>K</kbd> miš <kbd>H</kbd> marker prsta <kbd>U</kbd> sakrij
+        <kbd>G</kbd> look around / follow me <kbd>M</kbd> orbit/window <kbd>N</kbd> center
+        <kbd>T</kbd> orbit panel <kbd>E</kbd> eye color <kbd>Q</kbd> quality
+        <kbd>F</kbd> fullscreen <kbd>D</kbd> debug <kbd>C</kbd> calibration <kbd>S</kbd> stereo <kbd>K</kbd> mouse <kbd>H</kbd> finger marker <kbd>U</kbd> hide
       </div>
       <div class="hud__hands">
-        Ruke bez kamere: <kbd>Shift</kbd>+miš prst · +kotačić dubina <kbd>O</kbd> dlan <kbd>Z</kbd> šaka <kbd>B</kbd>+miš okvir
+        Hands without a camera: <kbd>Shift</kbd>+mouse finger · +wheel depth <kbd>O</kbd> palm <kbd>Z</kbd> fist <kbd>B</kbd>+mouse frame
       </div>
-      <div class="hud__hint">Ispusti .glb / .gltf glave bilo gdje u prozor — postaje nova glava robota</div>
+      <div class="hud__hint">Drop a .glb / .gltf head anywhere — it becomes the robot's new head</div>
     </div>
+
+    <div id="hint" class="hint" aria-live="polite"><span id="hint-text"></span></div>
+
+    <div id="mode-switch" class="mode-switch" role="group" aria-label="View mode" data-mode="follow">
+      <button type="button" data-mode="look" aria-pressed="false">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8" cy="8" rx="6.5" ry="2.6" /><circle cx="8" cy="8" r="1.6" class="fill" /></svg>
+        Look around
+      </button>
+      <button type="button" data-mode="follow" aria-pressed="true">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8c1.6-2.9 3.8-4.3 6.5-4.3s4.9 1.4 6.5 4.3c-1.6 2.9-3.8 4.3-6.5 4.3S3.1 10.9 1.5 8z" /><circle cx="8" cy="8" r="2" class="fill" /></svg>
+        Follow me
+      </button>
+    </div>
+
+    <a id="signature" class="signature" href="https://instagram.com/artificial_media_studio" target="_blank" rel="noopener">Artificial Media</a>
 
     <div id="debug" class="debug" hidden>
       <canvas id="debug-cam" width="320" height="180"></canvas>
@@ -33,14 +48,14 @@
 
     <form id="calib" class="panel" hidden autocomplete="off"></form>
 
-    <div id="drop" class="drop" hidden><div>Ispusti model glave</div></div>
+    <div id="drop" class="drop" hidden><div>Drop a head model</div></div>
     <div id="toast" class="toast" hidden></div>
     <div id="mode-badge" class="mode-badge" hidden></div>
 
     <div id="loader" class="loader" role="status" aria-live="polite" aria-busy="true">
       <div class="loader__brand">Artificial Media</div>
       <div class="loader__bar" aria-hidden="true"></div>
-      <div id="loader-status" class="loader__status"><span class="visually-hidden">Učitavam robota…</span></div>
+      <div id="loader-status" class="loader__status"><span class="visually-hidden">Loading the robot…</span></div>
     </div>
 
     <script type="module" src="/src/main.js"></script>

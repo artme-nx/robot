@@ -8,11 +8,24 @@ Sony Spatial Reality Display). Hard-surface android poprsje gleda točno u tvoje
 **Glava upravlja kamerom, ruke upravljaju robotom:** ista kamera prati i do dvije ruke — robot prati vrh
 tvog prsta, ljuti se kad ga diraš i rastavlja se na otvoren dlan; dvjema rukama uokviriš kadar kao redatelj.
 
+Dva načina, gumb u dnu ekrana (ili `G`): **FOLLOW ME** (zadan) — kamera miruje, a robot okreće glavu i oči
+za tobom; **LOOK AROUND** — ti kružiš oko robota, a on stoji mirno. Sučelje je na engleskom (posjetitelji
+dolaze s Instagrama): kratke upute koje se izmjenjuju i nestaju kad gestu prvi put napraviš, i potpis
+*Artificial Media* s poveznicom na [Instagram](https://instagram.com/artificial_media_studio).
+
 **Živo:** https://artme-nx.github.io/robot/
 
-| Robot | Robot prati prst | Prekrižene oči (prst blizu lica) |
+| Sučelje: FOLLOW ME, prva uputa | FOLLOW ME — glava 15 cm udesno | LOOK AROUND — kamera kruži |
 | --- | --- | --- |
-| ![Robot](docs/screenshots/robot.jpg) | ![Robot prati prst](docs/screenshots/robot-prati-prst.jpg) | ![Prekrižene oči](docs/screenshots/robot-prekrizene-oci.jpg) |
+| ![Sučelje](docs/screenshots/robot-sucelje.jpg) | ![FOLLOW ME](docs/screenshots/robot-follow-me.jpg) | ![LOOK AROUND](docs/screenshots/robot-look-around.jpg) |
+
+| Oči otvorene | Treptaj = zatvarač (blenda zatvorena) | Prekrižene oči (prst ~9 cm od lica) |
+| --- | --- | --- |
+| ![Oči otvorene](docs/screenshots/robot-oci-otvorene.jpg) | ![Zatvarač](docs/screenshots/robot-zatvarac.jpg) | ![Prekrižene oči](docs/screenshots/robot-prekrizene-oci.jpg) |
+
+| Robot | Robot prati prst |
+| --- | --- |
+| ![Robot](docs/screenshots/robot.jpg) | ![Robot prati prst](docs/screenshots/robot-prati-prst.jpg) |
 
 | Ljutnja (prst predugo blizu) | Rastavljen robot (otvoren dlan) | Rastavljen — s boka |
 | --- | --- | --- |
@@ -36,10 +49,19 @@ pmndrs `postprocessing` + N8AO, meshoptimizer za generiranu geometriju.
 - Oči gledaju **točno u 3D položaj tvojih očiju** (konvergencija za blizu/daleko), uz sakade (kratki
   pogledi na tvoje lijevo/desno oko i usta), mikrosakade i tremor. Glava i vrat slijede s kašnjenjem i
   inercijom (opruga s prigušenjem i "servo" mrtvom zonom). Kad se približiš, blenda se sužava i jezgra
-  posvijetli. Povremeno trepće kapcima ili zatvaranjem blende; suptilno "diše".
+  posvijetli; suptilno "diše".
+- **Treptaj je zatvarač fotoaparata:** iris-blenda se oštro zatvori do kraja (~80 ms), kratko ostane zatvorena
+  (~40 ms, da se vidi i na snimci od 30 fps) pa se otvori (~160 ms); svjetlo iz oka se pritom gotovo ugasi.
+  Ponekad dva "klika" zaredom. Kapci više ne trepću — ostaju u položaju mirovanja i stisnu se samo kad je
+  robot ljut.
+- **Buđenje:** dok je ekran za učitavanje gore, oči su zatvorene i tamne; kad se on odtapa, jezgra se upali uz
+  dva kratka titraja, a blenda se otvori u dva koraka (kratki prvi korak, stanka, puno otvaranje s blagim
+  prebačajem).
 - `E` mijenja boju očiju: ledeno cijan ↔ jantarna.
 - **Ruke:** ispruženi kažiprst privuče pogled — oči prestanu gledati tebe i prate vrh prsta u 3D-u (blizu lica
-  konvergiraju i iris-blende se suze), a kad spustiš ruku, pogled se glatko vrati prema G pravilima. Dodir lica:
+  konvergiraju i iris-blende se suze), a kad spustiš ruku, pogled se glatko vrati na tebe. **Prekrižene oči:**
+  kad je prst bliže od ~20 cm lica, obje oči jasno idu prema nosu — namjerno jače od fizički točnog kuta
+  (~30° po oku na 14 cm, do 46° na ~7 cm). Dodir lica:
   glava ustukne na opruzi, oči bljesnu, blende se zatvore pa otvore; prst blizu dulje od ~2 s i robot se naljuti
   (crvene oči, jače pulsiranje, servo trzaji, stisnuti kapci), a kad makneš ruku, smiri se.
 - **Rastavljanje:** otvoren dlan s raširenim prstima rastavi glavu i poprsje kao tehnički prikaz proizvoda
@@ -61,7 +83,7 @@ relativno na udaljenost tvoje glave). Bez kamere geste se mogu glumiti mišem (v
 
 | Gesta | Kako | Robot |
 | --- | --- | --- |
-| **Ispruženi kažiprst** | kažiprst gore, ostali prsti savijeni | **oči prate vrh prsta**; blizu lica konvergiraju (prekriže se) i blende se suze; `H` uključuje marker na vrhu prsta |
+| **Ispruženi kažiprst** | kažiprst ispružen, ostali prsti (barem opušteno) savijeni | **oči prate vrh prsta**; bliže od ~20 cm lica se **prekriže** (jasno prema nosu) i blende se suze; `H` uključuje marker na vrhu prsta |
 | **Dodir** (kažiprstom) | primakni prst robotovu licu | robot se **trgne** (glava ustukne, oči bljesnu, blende se zatvore pa otvore); prst blizu > ~2 s → **ljutnja** (crvene oči, pulsiranje, servo trzaji) |
 | **Otvoren dlan** | svi prsti ispruženi i **rašireni** | **rastavljanje** glave i poprsja; količina prati koliko su prsti rašireni (ostaje kad spustiš ruku) |
 | **Šaka** | svi prsti savijeni, palac uvučen | **sklapanje** obrnutim redom, s "klikom" i bljeskom spojeva; vraća normalni kadar |
@@ -98,10 +120,10 @@ npm run preview   # lokalni pregled builda
 
 | Tipka | Akcija |
 | --- | --- |
-| `M` | način kamere: **ORBIT** ↔ **WINDOW** (kratko se prikaže u kutu) |
+| `M` | način kamere: **ORBIT** ↔ **WINDOW** (kratko se prikaže u kutu; gumb u dnu prati isto) |
 | `N` | ORBIT: "ovo je centar" — trenutni položaj glave postaje neutralni |
 | `T` | ORBIT panel: pojačanja, kutovi, zoom, mrtva zona, krutost opruge (spremaju se) |
-| `G` | pogled robota: oči prate do ±25° / oči uvijek prate / glava i oči prate |
+| `G` | **LOOK AROUND** ↔ **FOLLOW ME** (isto kao gumb u dnu ekrana) |
 | `E` | boja očiju robota (cijan / jantar) |
 | `Q` | kvaliteta: high / low |
 | `F` | cijeli zaslon (preporučeno) |
@@ -110,7 +132,7 @@ npm run preview   # lokalni pregled builda
 | `S` | crveno-cijan anaglif (stereo) |
 | `K` | miš glumi glavu (kotačić = naprijed/natrag) |
 | `H` | diskretan sjajni marker na vrhu prsta (ruke) |
-| `U` | sakrij sučelje |
+| `U` | sakrij cijelo sučelje (HUD, gumb, upute, potpis, obavijesti) — čista slika za snimanje |
 | `Shift` + miš | miš glumi vrh ispruženog kažiprsta |
 | `Shift` + kotačić | dubina prsta (prema ekranu / prema sebi) |
 | `O` (drži) | otvoren dlan — prsti se postupno šire dok držiš |
@@ -126,10 +148,26 @@ bilo gdje u prozor.
 Bez kamere (odbijena dozvola, nema uređaja) miš automatski glumi glavu, a ruke se glume mišem i tipkama
 `Shift`, `O`, `Z` i `B` iz tablice iznad.
 
-## ORBIT ili WINDOW — dva načina kamere
+## FOLLOW ME i LOOK AROUND
 
-**ORBIT** je zadan: perspektivna kamera uvijek gleda u točku interesa (središte glave robota), robot stoji
-mirno, a ti kružiš oko njega.
+Gumb u dnu ekrana (i tipka `G`) prebacuje dva načina; pri otvaranju stranice uvijek je **FOLLOW ME**.
+
+**FOLLOW ME** = WINDOW kamera + pogled 3: kamera miruje (ekran je prozor), a robot okreće glavu i oči za tobom.
+Okret glave je namjerno pojačan da reakcija bude jasna na prvi pogled: pomak od **20 cm u stranu** (na ~60 cm
+od ekrana, oko 9° gledano iz robotove glave) daje **~40° okreta glave** (pojačanje ×5,5 s mekim limitom
+oko 55°; gore-dolje ×2,2, do 22°). Oči stignu prve i gledaju točno u tebe, a glava i vrat slijede s kašnjenjem
+i inercijom (iste opruge kao prije), pa se oči na kraju malo vrate prema tebi. Prema prstu se glava okreće
+bez pojačanja.
+
+**LOOK AROUND** = ORBIT kamera + pogled 1: ti kružiš oko robota, a on stoji mirno (opis ORBIT-a ispod).
+
+`M` i dalje prebacuje samo kameru (ORBIT ↔ WINDOW); kako svaki način kamere ima svoj pogled, `M` u praksi
+prebacuje isti par, a gumb pokazuje gdje si.
+
+### ORBIT
+
+Perspektivna kamera uvijek gleda u točku interesa (središte glave robota), robot stoji mirno, a ti kružiš
+oko njega.
 
 - **Neutralni položaj** se automatski kalibrira u prve ~1,5 s nakon što se lice pronađe (i nakon duljeg
   gubitka lica); `N` ga ručno postavlja na trenutni položaj glave.
@@ -149,15 +187,29 @@ mirno, a ti kružiš oko njega.
   osjetljivost zooma, mrtvu zonu, krutost opruge); vrijednosti se pamte u pregledniku.
 - `D` debug overlay prikazuje azimut, elevaciju i zoom.
 
-**WINDOW** je fizički točna off-axis projekcija: ekran je prozor, a kamera je točno na tvom oku.
+### WINDOW
+
+Fizički točna off-axis projekcija: ekran je prozor, a kamera je točno na tvom oku.
 Kao kroz pravi prozor, kad se odmakneš, objekt iza stakla na ekranu postaje *veći* (prozor zauzima manji
 kut, a objekt ostaje gdje jest), a pomak glave u stranu mijenja kut gledanja samo onoliko koliko bi ga
 mijenjao i u stvarnosti — uvjerljivo, ali suptilno.
 
-**Robot u ORBIT načinu** stoji mirno (glava i tijelo se ne okreću), pa mu možeš vidjeti profil. Zadano ga
-oči prate samo dok si unutar ~±25° od fronte, a dalje se glatko vrate i gledaju naprijed. `G` prebacuje:
-(1) to zadano ponašanje, (2) oči uvijek prate do granice rotacije oka, (3) glava i oči prate kao u
-WINDOW načinu.
+**Robot u LOOK AROUND (ORBIT)** stoji mirno (glava i tijelo se ne okreću), pa mu možeš vidjeti profil. Oči
+ga prate samo dok si unutar ~±25° od fronte, a dalje se glatko vrate i gledaju naprijed. Za testove postoje
+i ostala ponašanja pogleda (`__ht.setGazeMode`): (2) oči uvijek prate do granice rotacije oka, (3) glava i
+oči prate (u WINDOW načinu s pojačanim okretom).
+
+## Upute, potpis i sučelje
+
+- **Upute** (engleski) iznad gumba, jedna po jedna, izmjenjuju se svakih ~3,4 s: *Move your head*,
+  *Point at its face*, *Open your palm*. Kad gestu prvi put uspješno napraviš, uputa dobije kvačicu i više
+  se ne pojavljuje (glava: pomak ~7 cm; kažiprst: oči drže prst ~0,35 s; dlan: robot se vidljivo rastavi).
+  Kreću ~2,6 s nakon što se robot pojavi, i krenu ispočetka pri svakom učitavanju stranice.
+- **Potpis** *Artificial Media* u donjem desnom kutu (na mobitelu gore desno) vodi na
+  [instagram.com/artificial_media_studio](https://instagram.com/artificial_media_studio).
+- Sve poruke na ekranu (status, obavijesti, HUD) su na engleskom; kalibracijski i ORBIT panel te debug
+  overlay ostali su na hrvatskom (alati za podešavanje).
+- `U` skriva sve odjednom: HUD, gumb, upute, potpis i obavijesti.
 
 Studio je proširen da i bok izgleda kao front: robot stoji u studiju s cikloramom, a softboxovi na stalcima
 su na mjestima stvarnih svjetala (izvan putanje kamere).
@@ -234,7 +286,8 @@ iz `window.screenX/Y`, pa je "prozor u svijet" upravo onaj dio ekrana koji prozo
   okolina iz HDRI-ja, materijali i tekst u prstenu objektiva.
 - **Geometrija** (`src/geometry/`): SDF primitive, marching cubes s narrow-band blokovima, worker s
   meshoptimizer simplifikacijom; modeli glave i poprsja robota.
-- **Sučelje** (`src/ui/`): ekran za učitavanje, HUD, debug overlay, kalibracijski i ORBIT panel, ispuštanje modela.
+- **Sučelje** (`src/ui/`): ekran za učitavanje, gumb načina (`modeSwitch.js`), upute (`hints.js`), HUD, debug
+  overlay, kalibracijski i ORBIT panel, ispuštanje modela.
 
 ### Praćenje ruku
 
@@ -261,8 +314,11 @@ iz `window.screenX/Y`, pa je "prozor u svijet" upravo onaj dio ekrana koji prozo
 Za automatske testove (Playwright) stranica izlaže `window.__ht`: `setHead([x, y, z])` (položaj glave u cm
 od centra prozora, `null` vraća praćenje), `setQuality('high'|'low')`, `setStereo(bool)`,
 `setCameraMode('orbit'|'window')`, `setOrbit({ az, el, zoom })` (orbita bez glave; `null` vraća upravljanje),
-`setGazeMode(1|2|3)`, `benchmark(n)` (ms po frameu bez vsynca), `robot` (objekt scene) i `state()`
-(`phase`: `loading` → `compiling` → `live`; `ready`: robot je na ekranu).
+`setViewMode('follow'|'look')` (FOLLOW ME / LOOK AROUND, kao gumb), `setGazeMode(1|2|3)` (pogled za trenutni
+način kamere), `blink()` (okini zatvarač odmah), `hints` (upute: `isDone(id)`, `items`), `benchmark(n)` (ms po
+frameu bez vsynca), `robot` (objekt scene; `robot.wake()` ponovno budi oči) i `state()` (`phase`: `loading` →
+`compiling` → `live`; `ready`: robot je na ekranu; `viewMode`, `cameraMode`, `gazeMode`, `headYawDeg` — okret
+glave u stupnjevima, `cross` — koliko su oči prekrižene, 0–1).
 Ruke: `setHand({ tip: [x, y], r, gesture, spread, frame })` (NDC vrha prsta, `r` = udaljenost ruke / udaljenost
 glave, 0,62 je neutralno; `frame: [x0, y0, x1, y1]` = okvir od dvije ruke u NDC; `null` vraća kameru/miš),
 `tap([x, y])`, `markers(bool)` i `hand()` (trenutno stanje).

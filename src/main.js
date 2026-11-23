@@ -26,6 +26,8 @@ import { OrbitPanel } from './ui/orbitPanel.js';
 import { OrbitController, loadOrbitSettings } from './camera/orbitController.js';
 import { Hud } from './ui/hud.js';
 import { Loader } from './ui/loader.js';
+import { ModeSwitch } from './ui/modeSwitch.js';
+import { Hints } from './ui/hints.js';
 import { setupDropzone } from './ui/dropzone.js';
 import './style.css';
 
@@ -41,16 +43,19 @@ const settings = loadSettings();
 const orbitSettings = loadOrbitSettings();
 installPCSS();
 
-// Način kamere: 'orbit' (zadano) ili 'window' (fizički točna off-axis projekcija).
-const CAMERA_MODE_KEY = 'robot:cameraMode';
-let cameraMode = 'orbit';
-try {
-  if (localStorage.getItem(CAMERA_MODE_KEY) === 'window') cameraMode = 'window';
-} catch {
-  /* bez pohrane */
-}
-// Ponašanje pogleda robota (G): 1 = prati do ±25°, 2 = oči uvijek prate, 3 = glava i oči prate.
-const gazeModes = { orbit: 1, window: 3 };
+// Dva načina (gumb u dnu ekrana, tipka G):
+//   LOOK AROUND — ORBIT kamera, ti kružiš oko robota; on stoji mirno, oči prate do ±25° (pogled 1);
+//   FOLLOW ME   — WINDOW kamera miruje, robot okreće glavu i oči za tobom (pogled 3, pojačan okret).
+// Svaki način kamere ima svoj pogled, pa i M (ORBIT ↔ WINDOW) prebacuje isti par.
+// Pri otvaranju stranice uvijek je FOLLOW ME.
+const VIEW_MODES = {
+  look: { camera: 'orbit', gaze: 1, toast: 'Look around — move your head to circle the robot' },
+  follow: { camera: 'window', gaze: 3, toast: 'Follow me — the robot turns to follow you' },
+};
+let cameraMode = VIEW_MODES.follow.camera;
+// Ponašanje pogleda po načinu kamere: 1 = prati do ±25°, 2 = oči uvijek prate, 3 = glava i oči prate.
+const gazeModes = { orbit: VIEW_MODES.look.gaze, window: VIEW_MODES.follow.gaze };
+const viewModeOf = (camera) => (camera === 'orbit' ? 'look' : 'follow');
 
 const QUALITY_KEY = 'robot:quality';
 let quality = 'high';
@@ -179,7 +184,7 @@ let postWarmed = false;
 
 robotReady.then(activateRobot, (err) => {
   console.error(err);
-  loader.fail(`Robot se nije mogao pripremiti: ${err?.message ?? err}`);
+  loader.fail(`The robot could not be prepared: ${err?.message ?? err}`);
 });
 
 function activateRobot() {
@@ -209,7 +214,9 @@ function onRobotFrame(now, frameMs) {
   if (stableFrames < REVEAL.stableFrames && now - firstFrameAt < REVEAL.maxWaitMs) return;
   revealed = true;
   loader.reveal();
-  hud.badge(cameraMode === 'orbit' ? 'ORBIT' : 'WINDOW');
+  // Oči su zatvorene ispod ekrana za učitavanje; otvore se kao pri buđenju dok se on odtapa.
+  robot.wake(0.5);
+  hints.start(now, 2600);
   if (pendingToast) hud.toast(...pendingToast);
   pendingToast = null;
 }
@@ -225,7 +232,7 @@ function setQuality(name) {
   post.setQuality(name);
   if (phase !== 'loading') robot.setQuality(QUALITY[name]);
   resize();
-  hud.toast(`Kvaliteta: ${name === 'high' ? 'visoka' : 'niska'}`, 1400);
+  hud.toast(`Quality: ${name}`, 1400);
 }
 
 // ---------- UI ----------
@@ -246,6 +253,14 @@ const panel = new CalibrationPanel(settings, (s) => {
 });
 const orbit = new OrbitController(orbitSettings);
 const orbitPanel = new OrbitPanel(orbitSettings, () => {});
+const modeSwitch = new ModeSwitch((mode) => setViewMode(mode));
+modeSwitch.set(viewModeOf(cameraMode));
+// Upute (izmjenjuju se; svaka nestane kad gesta prvi put uspije).
+const hints = new Hints([
+  { id: 'head', text: 'Move your head' },
+  { id: 'point', text: 'Point at its face' },
+  { id: 'palm', text: 'Open your palm' },
+]);
 
 // Obavijesti iz vremena učitavanja (kamera) pokažu se tek kad se robot otkrije.
 let pendingToast = null;
@@ -254,15 +269,19 @@ function notify(message, ms) {
   else pendingToast = [message, ms];
 }
 
-function setCameraMode(mode) {
+function setCameraMode(mode, { badge = true } = {}) {
   cameraMode = mode;
-  try {
-    localStorage.setItem(CAMERA_MODE_KEY, mode);
-  } catch {
-    /* bez pohrane */
-  }
   if (mode === 'orbit' && !orbit.neutral) orbit.recalibrate(performance.now(), 1.0);
-  hud.badge(mode === 'orbit' ? 'ORBIT' : 'WINDOW');
+  modeSwitch.set(viewModeOf(mode));
+  if (badge) hud.badge(mode === 'orbit' ? 'ORBIT' : 'WINDOW');
+}
+
+/** LOOK AROUND ili FOLLOW ME (gumb, tipka G): kamera + pripadni pogled robota. */
+function setViewMode(name) {
+  const m = VIEW_MODES[name];
+  gazeModes[m.camera] = m.gaze;
+  if (m.camera !== cameraMode) hud.toast(m.toast, 2200);
+  setCameraMode(m.camera, { badge: false });
 }
 
 let stereo = false;
@@ -275,29 +294,29 @@ resize();
 
 tracker
   .start()
-  .then(() => notify('Kamera spremna — pomakni glavu', 2000))
+  .then(() => notify('Camera ready — move your head', 2000))
   .catch((err) => {
     cameraFailed = true;
     console.warn('Kamera nije dostupna', err);
-    notify('Kamera nije dostupna — miš glumi glavu (kotačić = udaljenost)', 4200);
+    notify('No camera — your mouse moves the head (wheel = distance)', 4200);
   });
 
 // Vlastiti .glb/.gltf postaje glava robota i dobiva iste oči.
 setupDropzone(async (files) => {
   const picked = classifyFiles(files);
   if (!picked) {
-    hud.toast('Podržano: .glb i .gltf (uz pripadne .bin i teksture)');
+    hud.toast('Supported: .glb and .gltf (with their .bin and textures)');
     return;
   }
-  hud.toast(`Učitavam ${picked.main.name}…`, 60000);
+  hud.toast(`Loading ${picked.main.name}…`, 60000);
   try {
     const obj = await loadMeshFiles(picked.main, picked.all);
     await robotReady;
     robot.setCustomHead(obj);
-    hud.toast(`${picked.main.name} je nova glava robota · R okreni · [ ] veličina · ↑↓ oči`, 4000);
+    hud.toast(`${picked.main.name} is the robot's new head · R flip · [ ] size · ↑↓ eyes`, 4000);
   } catch (err) {
     console.error(err);
-    hud.toast(`Ne mogu učitati ${picked.main.name}: ${err.message ?? err}`, 5000);
+    hud.toast(`Can't load ${picked.main.name}: ${err.message ?? err}`, 5000);
   }
 });
 
@@ -321,32 +340,25 @@ window.addEventListener('keydown', (e) => {
       break;
     case 'n':
       orbit.recalibrate(performance.now(), 0.6);
-      hud.toast('Centar: trenutni položaj glave', 1400);
+      hud.toast('Center: current head position', 1400);
       break;
-    case 'g': {
-      gazeModes[cameraMode] = (gazeModes[cameraMode] % 3) + 1;
-      const labels = {
-        1: 'Pogled: oči prate do ±25°, zatim gledaju naprijed',
-        2: 'Pogled: oči uvijek prate',
-        3: 'Pogled: glava i oči prate',
-      };
-      hud.toast(labels[gazeModes[cameraMode]], 1800);
+    case 'g':
+      setViewMode(viewModeOf(cameraMode) === 'follow' ? 'look' : 'follow');
       break;
-    }
     case 's':
       stereo = !stereo;
-      hud.toast(stereo ? 'Anaglif uključen — crveno lijevo, cijan desno' : 'Anaglif isključen', 1600);
+      hud.toast(stereo ? 'Anaglyph on — red left, cyan right' : 'Anaglyph off', 1600);
       break;
     case 'm':
       setCameraMode(cameraMode === 'orbit' ? 'window' : 'orbit');
       break;
     case 'k':
       mouseMode = !mouseMode;
-      hud.toast(mouseMode ? 'Miš glumi glavu' : 'Praćenje kamerom', 1400);
+      hud.toast(mouseMode ? 'Mouse moves the head' : 'Camera tracking', 1400);
       break;
     case 'h': {
       const on = markers.toggle();
-      hud.toast(on ? 'Marker na vrhu prsta uključen' : 'Marker na vrhu prsta isključen', 1400);
+      hud.toast(on ? 'Fingertip marker on' : 'Fingertip marker off', 1400);
       break;
     }
     case 'u':
@@ -374,7 +386,7 @@ window.addEventListener('keydown', (e) => {
     case 'e':
       if (phase !== 'loading') {
         const name = robot.toggleEyeColor();
-        hud.toast(`Boja očiju: ${name}`, 1200);
+        hud.toast(`Eye color: ${name}`, 1200);
       }
       break;
     case 'escape':
@@ -427,7 +439,7 @@ function updatePose(now, dt, rect) {
     pose.tracked = [...pose.eye];
     pose.weight = 1;
     pose.roll = 0;
-    hud.setStatus('mouse', 'Test položaj glave');
+    hud.setStatus('mouse', 'Test head position');
     return 'test';
   }
 
@@ -438,10 +450,10 @@ function updatePose(now, dt, rect) {
     pose.weight = 1;
     source = 'miš';
     const label = cameraFailed
-      ? 'Bez kamere · miš glumi glavu'
+      ? 'No camera · mouse moves the head'
       : !tracker.ready
-        ? 'Čekam kameru · dopusti pristup · miš glumi glavu'
-        : 'Miš glumi glavu';
+        ? 'Waiting for camera · allow access · mouse moves the head'
+        : 'Mouse moves the head';
     hud.setStatus(cameraFailed || !tracker.ready ? 'idle' : 'mouse', label);
   } else {
     const tracking = tracker.update(now, hands.boxes, dt);
@@ -450,11 +462,11 @@ function updatePose(now, dt, rect) {
       pose.roll = tracker.roll;
       // Pri ponovnom pronalasku lica glatko se vraćamo iz centra.
       pose.weight = Math.min(1, pose.weight + dt * 4);
-      hud.setStatus('tracking', tracker.held ? 'Ruka ispred lica — držim položaj' : 'Pratim glavu');
+      hud.setStatus('tracking', tracker.held ? 'Hand in front of your face — holding position' : 'Tracking your head');
     } else {
       // Lice izgubljeno: pogled se glatko vraća u centar.
       pose.weight = Math.max(0, pose.weight - dt * 1.2);
-      hud.setStatus('searching', 'Tražim lice…');
+      hud.setStatus('searching', 'Looking for your face…');
     }
     source = tracking ? 'kamera' : 'centar';
   }
@@ -463,6 +475,26 @@ function updatePose(now, dt, rect) {
   for (let i = 0; i < 3; i++) pose.eye[i] = rest[i] + (pose.tracked[i] - rest[i]) * w;
   pose.eye[2] = Math.max(pose.eye[2], 5);
   return source;
+}
+
+// ---------- Upute: prepoznavanje prvog uspjeha ----------
+// Glava: pomak od ~7 cm od položaja na kojem je izvor (kamera/miš) počeo.
+// Kažiprst: oči robota drže prst ~0,35 s. Dlan: robot se vidljivo rastavio.
+const hintProbe = { source: null, ref: null, pointFor: 0 };
+function updateHints(now, dt, source) {
+  if (source !== hintProbe.source) {
+    hintProbe.source = source;
+    hintProbe.ref = null;
+  }
+  if (source !== 'centar') {
+    const p = pose.tracked;
+    if (!hintProbe.ref) hintProbe.ref = [...p];
+    else if (Math.hypot(p[0] - hintProbe.ref[0], p[1] - hintProbe.ref[1]) > 7) hints.complete('head', now);
+  }
+  hintProbe.pointFor = robot.fingerAttn > 0.8 ? hintProbe.pointFor + dt : 0;
+  if (hintProbe.pointFor > 0.35) hints.complete('point', now);
+  if (robot.explode.amount > 0.4) hints.complete('palm', now);
+  hints.update(now);
 }
 
 // ---------- Petlja ----------
@@ -593,6 +625,7 @@ function frame() {
     post.render(camMono, dt, null);
   }
   if (!revealed) onRobotFrame(now, frameMs);
+  else updateHints(now, dt, source);
 
   // Novi frame kamere ide u worker tek sad, kad je ovaj frame predan GPU-u.
   vision.afterRender();
@@ -669,7 +702,12 @@ window.__ht = {
   setQuality: (q) => setQuality(q),
   setStereo: (b) => (stereo = !!b),
   setCameraMode: (m) => setCameraMode(m),
+  /** 'look' (LOOK AROUND) ili 'follow' (FOLLOW ME). */
+  setViewMode: (m) => setViewMode(m),
   setGazeMode: (n) => (gazeModes[cameraMode] = n),
+  /** Okini zatvarač (treptaj) odmah. */
+  blink: () => robot.gaze.blinkNow(),
+  hints,
   /** Orbit bez glave: { az, el, zoom } (zoom = faktor udaljenosti), null vraća upravljanje glavi. */
   setOrbit: (o) => (orbit.override = o ? { snap: true, ...o } : null),
   orbit,
@@ -678,7 +716,11 @@ window.__ht = {
     scene: robot.name,
     phase,
     ready: revealed,
+    viewMode: viewModeOf(cameraMode),
     cameraMode,
+    gazeMode: gazeModes[cameraMode],
+    headYawDeg: +THREE.MathUtils.radToDeg(robot.lastGaze?.head.x ?? 0).toFixed(1),
+    cross: +robot.cross.toFixed(2),
     quality,
     pixelRatio: renderer.getPixelRatio(),
     drawCalls: renderer.info.render.calls,

@@ -53,12 +53,12 @@ html, body {
 
 #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 
-/* HUD */
+/* HUD: lijevi stupac u dnu (sredina je za gumb načina, desno potpis) */
 .hud {
   position: fixed;
   left: var(--space-4);
   bottom: var(--space-4);
-  right: var(--space-4);
+  max-width: min(540px, calc(50vw - 200px));
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-4);
@@ -67,7 +67,6 @@ html, body {
   pointer-events: none;
   transition: opacity 0.4s ease;
 }
-.hud.is-hidden { opacity: 0; }
 .hud__status {
   display: inline-flex;
   align-items: center;
@@ -306,7 +305,7 @@ kbd + kbd { margin-left: 0; }
 }
 .letterbox { position: fixed; background: #000; pointer-events: none; display: none; }
 
-@media (max-width: 640px) {
+@media (max-width: 1000px) {
   .hud__keys, .hud__hint, .hud__hands { display: none; }
 }
 
@@ -372,4 +371,112 @@ kbd + kbd { margin-left: 0; }
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* Način: LOOK AROUND ↔ FOLLOW ME (gumb u dnu, klizni označivač ispod aktivnog) */
+.mode-switch {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(8 10 14 / 0.55);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  backdrop-filter: blur(12px);
+  transition: opacity 0.4s ease;
+}
+.mode-switch::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  box-shadow: inset 0 0 0 1px rgb(121 230 255 / 0.35), 0 0 18px rgb(121 230 255 / 0.12);
+  transition: transform 0.32s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+.mode-switch[data-mode='follow']::before { transform: translateX(100%); }
+.mode-switch button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: rgb(255 255 255 / 0.55);
+  font: 600 12px/1 var(--font-sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+.mode-switch button:hover { color: rgb(255 255 255 / 0.85); }
+.mode-switch button[aria-pressed='true'] { color: #fff; }
+.mode-switch button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.mode-switch svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; }
+.mode-switch svg .fill { fill: currentColor; stroke: none; }
+
+/* Uputa iznad gumba: izmjenjuje se, nestaje kad gesta uspije */
+.hint {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-4) + 62px);
+  transform: translate(-50%, 6px);
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: rgb(8 10 14 / 0.5);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  font: 500 15px/1.2 var(--font-sans);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease, transform 0.35s ease, border-color 0.25s ease;
+}
+.hint.is-visible { opacity: 1; transform: translate(-50%, 0); }
+.hint.is-done { border-color: rgb(111 220 140 / 0.6); }
+.hint.is-done::before { content: '✓'; margin-right: 8px; color: var(--color-ok); font-weight: 700; }
+
+/* Potpis s poveznicom na Instagram */
+.signature {
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--space-4) + 13px);
+  color: rgb(255 255 255 / 0.55);
+  font: 500 12px/1 var(--font-sans);
+  letter-spacing: 0.14em;
+  text-decoration: none;
+  transition: color 0.2s ease, opacity 0.4s ease;
+}
+.signature:hover { color: #fff; }
+.signature:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; border-radius: 2px; }
+
+/* U: sakrij cijelo sučelje (čista slika za snimanje) */
+body.ui-hidden :is(.hud, .mode-switch, .hint, .signature, .toast, .mode-badge) {
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.4s ease, visibility 0s linear 0.4s;
+}
+
+/* Mobitel: status i potpis gore, gumb i uputa dolje preko cijele širine */
+@media (max-width: 640px) {
+  .hud { top: var(--space-4); bottom: auto; max-width: calc(100vw - 150px); }
+  .signature { top: calc(var(--space-4) + 6px); bottom: auto; font-size: 11px; }
+  .toast { top: 56px; }
+  .mode-switch { width: calc(100vw - 2 * var(--space-4)); max-width: 360px; }
+  .mode-switch button { min-height: 44px; padding: 0 10px; font-size: 11px; letter-spacing: 0.1em; gap: 6px; }
+  .hint { bottom: calc(var(--space-4) + 66px); font-size: 14px; }
 }

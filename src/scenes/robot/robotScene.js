@@ -33,6 +33,18 @@ const ANGRY = new THREE.Color('#ff2a12');
 
 // Položaj robota: središte između očiju (cm, prostor prozora) i mjerilo.
 const ROBOT = { y: 3.6, z: -64, scale: 0.86 };
+const DEG = Math.PI / 180;
+// FOLLOW ME (WINDOW + pogled 3): glava se okreće za gledateljem pojačano — pomak od
+// ~20 cm u stranu (na ~60 cm od ekrana, ~9° iz robotove glave) daje ~40° okreta glave.
+// Meki limit (tanh) da glava ne ode u profil; oči i dalje gledaju točno u gledatelja.
+const FOLLOW_ME = { yawGain: 5.5, pitchGain: 2.2, maxYaw: 55 * DEG, maxPitch: 22 * DEG };
+// Prekrižene oči: ispruženi prst bliže od ~22 cm lica povlači obje oči prema nosu,
+// pojačano preko fizički točnog kuta (do punog dodatka na ~7 cm).
+const CROSS = { start: 22, full: 7, extra: 34 * DEG, maxYaw: 46 * DEG };
+// Buđenje: oči kreću zatvorene, jezgra se upali, blenda se otvori u dva koraka.
+const WAKE = { powerOn: 0.45, firstOpen: 0.3, firstStep: 0.35, hold: 0.62, fullOpen: 0.38 };
+const AWAKE = { aperture: 1, brightness: 1 };
+const softLimit = (x, max) => max * Math.tanh(x / max);
 const HEAD_PIVOT = new THREE.Vector3(0, -10.4, -6.3);
 // Studio (prostor prozora, cm): pod, polumjer cikloramskog zida, vrh zida.
 const STUDIO = { floorY: -140, radius: 255, top: 230 };
@@ -112,7 +124,6 @@ export class RobotScene {
     this.recoilV = 0;
     this.recoilSide = 1;
     this.flash = 0;
-    this.startle = 0;
     this.irisSnap = 0;
     this.irisSnapT = -1;
     this.ledFlash = 0;
@@ -125,6 +136,36 @@ export class RobotScene {
     this.openLatched = false;
     this.wasExploded = false;
     this.displayColor = new THREE.Color();
+    // Buđenje: null = spava (blenda zatvorena) dok se ne pozove wake().
+    this.wakeT = null;
+    this.cross = 0;
+  }
+
+  /** Probudi robota: oči se otvore kao pri buđenju (nakon delay sekundi). */
+  wake(delay = 0) {
+    this.wakeT = -delay;
+  }
+
+  /** 0 = spava (zatvorene oči), 1 = budan. Množi blendu i sjaj očiju. */
+  #wakeState(dt) {
+    if (this.wakeT === null) return { aperture: 0, brightness: 0.1 };
+    this.wakeT += dt;
+    const t = this.wakeT;
+    if (t <= 0) return { aperture: 0, brightness: 0.1 };
+    const { powerOn, firstOpen, firstStep, hold, fullOpen } = WAKE;
+    if (t > hold + fullOpen && t > powerOn) return AWAKE;
+    // Jezgra se upali uz dva kratka titraja (kao pri paljenju).
+    let brightness = 0.1 + 0.9 * THREE.MathUtils.smootherstep(t, 0, powerOn);
+    if (t < 0.22) brightness *= t % 0.11 < 0.05 ? 0.35 : 1;
+    // Blenda: zatvoreno → kratki prvi korak → stanka → puno otvaranje s blagim prebačajem.
+    let aperture = 0;
+    if (t > firstOpen) aperture = firstStep * THREE.MathUtils.smoothstep(t, firstOpen, firstOpen + 0.12);
+    if (t > hold) {
+      const p = Math.min(1, (t - hold) / fullOpen);
+      const back = 1 + 2.2 * Math.pow(p - 1, 3) + 1.2 * Math.pow(p - 1, 2); // easeOutBack
+      aperture = firstStep + (1 - firstStep) * back;
+    }
+    return { aperture, brightness };
   }
 
   init() {
@@ -729,7 +770,7 @@ export class RobotScene {
   toggleEyeColor() {
     this.eyeColorName = this.eyeColorName === 'cijan' ? 'jantar' : 'cijan';
     this.targetEyeColor.copy(EYE_COLORS[this.eyeColorName]);
-    return this.eyeColorName === 'cijan' ? 'ledeno cijan' : 'jantarna';
+    return this.eyeColorName === 'cijan' ? 'ice cyan' : 'amber';
   }
 
   update(t, dt, ctx) {
@@ -744,26 +785,39 @@ export class RobotScene {
     const viewerLocal = this.root.worldToLocal(viewerWorld.clone());
     const yaw = Math.atan2(viewerLocal.x, viewerLocal.z);
     const pitch = Math.atan2(viewerLocal.y, Math.hypot(viewerLocal.x, viewerLocal.z));
-    // Ponašanje pogleda (G): 1 = oči prate do ±25° od fronte, zatim gledaju naprijed;
-    // 2 = oči uvijek prate (do granice rotacije oka); 3 = glava i oči prate.
+    // Ponašanje pogleda: 1 = oči prate do ±25° od fronte, zatim gledaju naprijed (LOOK AROUND);
+    // 2 = oči uvijek prate (do granice rotacije oka); 3 = glava i oči prate (FOLLOW ME u WINDOW).
     const gazeMode = ctx.gazeMode ?? 3;
     const followHead = gazeMode === 3;
+    const followMe = followHead && ctx.cameraMode === 'window';
 
     // Ruke: kažiprst privlači pogled, dodir lica plaši/ljuti, dlan rastavlja, šaka sklapa.
     this.#updateHands(dt, ctx.hand);
     const attn = this.fingerAttn;
     const finger = this.fingerWorld;
-    let toYaw = yaw, toPitch = pitch;
-    if (attn > 0.001) {
-      const fl = this.root.worldToLocal(finger.clone());
-      toYaw = THREE.MathUtils.lerp(yaw, Math.atan2(fl.x, Math.max(0.5, fl.z)), attn);
-      toPitch = THREE.MathUtils.lerp(pitch, Math.atan2(fl.y, Math.hypot(fl.x, Math.max(0.5, fl.z))), attn);
+
+    // Ciljni kut glave: dio kuta prema gledatelju (FOLLOW ME: pojačano), a prema
+    // prstu uvijek kao prije (0,55 / 0,45 kuta), da prst blizu lica ne zakrene glavu u profil.
+    const headGoal = new THREE.Vector2();
+    if (followHead) {
+      if (followMe) {
+        headGoal.set(softLimit(yaw * FOLLOW_ME.yawGain, FOLLOW_ME.maxYaw), softLimit(pitch * FOLLOW_ME.pitchGain, FOLLOW_ME.maxPitch));
+      } else {
+        headGoal.set(yaw * 0.55, pitch * 0.45);
+      }
+      if (attn > 0.001) {
+        const fl = this.root.worldToLocal(finger.clone());
+        const fYaw = Math.atan2(fl.x, Math.max(0.5, fl.z));
+        const fPitch = Math.atan2(fl.y, Math.hypot(fl.x, Math.max(0.5, fl.z)));
+        headGoal.lerp(_g.set(fYaw * 0.55, fPitch * 0.45), attn);
+      }
     }
 
     // Ekvivalent udaljenosti gledatelja od ekrana (za blendu), neovisno o načinu kamere.
     const headWorld = this.root.localToWorld(new THREE.Vector3(0, 0, 0));
     const viewerZ = viewerWorld.distanceTo(headWorld) - Math.abs(ROBOT.z) * (this.displayScale ?? 1);
-    const g = this.gaze.update(dt, viewerZ, followHead ? new THREE.Vector2(toYaw, toPitch) : new THREE.Vector2(0, 0));
+    const g = this.gaze.update(dt, viewerZ, headGoal);
+    this.lastGaze = g;
     const frontAngle = Math.atan2(Math.hypot(viewerLocal.x, viewerLocal.y), viewerLocal.z);
     const followGoal = gazeMode === 1 ? 1 - THREE.MathUtils.smoothstep(frontAngle, THREE.MathUtils.degToRad(22), THREE.MathUtils.degToRad(31)) : 1;
     this.eyeFollow = THREE.MathUtils.lerp(this.eyeFollow ?? 1, followGoal, 1 - Math.exp(-dt * 5));
@@ -809,9 +863,12 @@ export class RobotScene {
     const pulse = (0.5 * Math.sin(P * 2.6) + 0.18 * Math.sin(P * 7.3 + 1.2)) * (1 + 1.6 * this.anger);
     // Blizina prsta: uža blenda, jača jezgra.
     const fingerClose = attn > 0 ? 1 - THREE.MathUtils.smoothstep(this.fingerEyeDist, 3, 34) : 0;
-    const aperture = THREE.MathUtils.lerp(g.aperture, THREE.MathUtils.lerp(0.48, 0.1, fingerClose), attn);
-    const brightness = THREE.MathUtils.lerp(g.brightness, THREE.MathUtils.lerp(1.0, 1.9, fingerClose), attn);
+    const wake = this.#wakeState(dt);
+    const aperture = THREE.MathUtils.lerp(g.aperture, THREE.MathUtils.lerp(0.48, 0.1, fingerClose), attn) * wake.aperture;
+    const brightness = THREE.MathUtils.lerp(g.brightness, THREE.MathUtils.lerp(1.0, 1.9, fingerClose), attn) * wake.brightness;
     const limit = THREE.MathUtils.lerp(1, 0.16, Math.min(1, exploded * 1.4));
+    // Prekrižene oči: 0 = prst daleko (ili ga nema), 1 = prst ~7 cm od lica.
+    this.cross = attn * (1 - THREE.MathUtils.smoothstep(this.fingerEyeDist, CROSS.full, CROSS.start)) * Math.max(0, 1 - exploded * 2);
     for (const eye of this.eyes) {
       const lv = eye.root.worldToLocal(target.clone());
       // Izvan dosega (mod 1) oči se glatko vrate i gledaju ravno naprijed.
@@ -823,11 +880,14 @@ export class RobotScene {
         ey = THREE.MathUtils.lerp(ey, Math.atan2(lf.x, fz), attn);
         ep = THREE.MathUtils.lerp(ep, Math.atan2(lf.y, Math.hypot(lf.x, fz)), attn);
       }
-      const maxYaw = THREE.MathUtils.lerp(0.62, 0.7, attn) * limit;
+      // Prema nosu: oko na +x skreće u -yaw i obrnuto.
+      ey -= eye.side * this.cross * CROSS.extra;
+      const maxYaw = THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.62, 0.7, attn), CROSS.maxYaw, this.cross) * limit;
       eye.gimbal.rotation.set(-THREE.MathUtils.clamp(ep, -0.5 * limit, 0.5 * limit), THREE.MathUtils.clamp(ey, -maxYaw, maxYaw) + this.twitch.y * 0.6, 0, 'YXZ');
       eye.setColor(color);
       eye.setAperture(Math.max(0, aperture * (1 - this.irisSnap) * (1 - 0.32 * this.anger)));
-      eye.setBlink(Math.max(g.blink, this.startle * 0.7, 0.3 * this.anger));
+      // Kapci više ne trepću (treptaj je zatvarač); stisnu se samo kad je robot ljut.
+      eye.setBlink(0.3 * this.anger);
       eye.setIntensity(brightness * (1 + 2.4 * this.flash) * (1 + 0.45 * this.anger), pulse);
     }
     const ledBoost = 1 + 3 * this.ledFlash;
@@ -896,13 +956,12 @@ export class RobotScene {
     this.fingerNear = near;
   }
 
-  /** Trzaj na dodir: glava ustukne, oči bljesnu, blende se zatvore pa otvore. */
+  /** Trzaj na dodir: glava ustukne, oči bljesnu, blende se zatvore pa otvore (kapci ostaju). */
   #flinch(side) {
     this.recoilSide = side;
     this.recoilV += 7.5;
     this.flash = 1;
     this.irisSnapT = 0;
-    this.startle = 1;
   }
 
   #updateReactions(dt) {
@@ -916,7 +975,6 @@ export class RobotScene {
       this.recoil += this.recoilV * h;
     }
     this.flash *= Math.exp(-dt / 0.16);
-    this.startle *= Math.exp(-dt / 0.12);
     this.ledFlash *= Math.exp(-dt / 0.25);
     // Blenda: brzo zatvori (60 ms), drži (100 ms), otvori (340 ms).
     if (this.irisSnapT >= 0) {
@@ -1113,3 +1171,4 @@ export class RobotScene {
 }
 
 const _v = new THREE.Vector3();
+const _g = new THREE.Vector2();

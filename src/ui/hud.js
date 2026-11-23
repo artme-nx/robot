@@ -24,8 +24,9 @@ export class Hud {
     }, ms);
   }
 
+  /** U: sakrij / pokaži cijelo sučelje (HUD, gumb načina, upute, potpis, obavijesti). */
   toggle() {
-    this.root.classList.toggle('is-hidden');
+    document.body.classList.toggle('ui-hidden');
   }
 
   setStatus(state, label) {
