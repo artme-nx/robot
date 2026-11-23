@@ -230,7 +230,7 @@ function headCage(x, y, z, h) {
   return smax(shell, F, 0.25);
 }
 
-export function robotHeadModel({ step = 0.095 } = {}) {
+export function robotHeadModel({ step = 0.095, simplifyError = 0.006 } = {}) {
   // Kranij je podijeljen na lijevu i desnu polovicu (rastavljanje ide u stranu).
   const pieces = ['face', 'jaw', 'craniumL', 'craniumR', 'crest', 'cage'];
   return {
@@ -241,7 +241,7 @@ export function robotHeadModel({ step = 0.095 } = {}) {
     cullMargin: 0.3,
     minAux: [-0.62, -0.62, -0.62, -0.62, -0.62, -1e9],
     shellDepth: true, // dubina vrhova (unutarnja ploha panela je sirovi, mat kompozit)
-    simplifyError: 0.006,
+    simplifyError,
     normalEpsilon: 0.03,
     eval(x, y, z, out) {
       const h = headSolid(x, y, z);
@@ -327,7 +327,7 @@ function bodyCage(x, y, z, h) {
   return d;
 }
 
-export function robotBodyModel({ step = 0.14 } = {}) {
+export function robotBodyModel({ step = 0.14, simplifyError = 0.008 } = {}) {
   return {
     // Ramena su podijeljena na lijevo/desno (rastavljanje ide u stranu). Karbonski plašt
     // ostaje cijeli: kroz njega prolaze kabeli i klipovi vrata.
@@ -338,7 +338,7 @@ export function robotBodyModel({ step = 0.14 } = {}) {
     cullMargin: 0.4,
     minAux: [-0.75, -0.75, -0.75, -0.75, -1e9],
     shellDepth: true,
-    simplifyError: 0.008,
+    simplifyError,
     normalEpsilon: 0.04,
     eval(x, y, z, out) {
       const h = torsoSolid(x, y, z);

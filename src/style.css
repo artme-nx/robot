@@ -358,6 +358,22 @@ kbd + kbd { margin-left: 0; }
   text-align: center;
 }
 .loader.is-failed .loader__bar { display: none; }
+/* Mobitel: stvarni napredak umjesto klizne trake */
+.loader.is-determinate .loader__bar::after {
+  width: 100%;
+  animation: none;
+  transform: scaleX(var(--p, 0));
+  transform-origin: left center;
+  transition: transform 0.25s ease-out;
+}
+.loader__pct {
+  margin-top: -6px;
+  font: 500 10px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  color: rgb(255 255 255 / 0.4);
+  font-variant-numeric: tabular-nums;
+}
+.loader.is-failed .loader__pct { display: none; }
 .loader.is-failed .loader__status { color: var(--color-warn); }
 @media (prefers-reduced-motion: reduce) {
   .loader { transition: opacity 0.25s linear, visibility 0s linear 0.25s; }

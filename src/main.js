@@ -31,6 +31,9 @@ import { Hints } from './ui/hints.js';
 import { CameraNote } from './ui/cameraNote.js';
 import { TouchInput } from './tracking/touchInput.js';
 import { IS_MOBILE, IN_APP, MOBILE, mobileCameraFov, mobileCameraPosition } from './device.js';
+import { useBakedGeometry } from './geometry/generate.js';
+import { useMobileEnvironment } from './render/environment.js';
+import { MOBILE_ASSETS } from './generated/mobileAssets.js';
 import { setupDropzone } from './ui/dropzone.js';
 import './style.css';
 
@@ -44,7 +47,8 @@ const REVEAL = { stableFrames: 4, stableFrameMs: 25, maxWaitMs: 900 };
 
 const settings = loadSettings();
 const orbitSettings = loadOrbitSettings();
-installPCSS();
+// PCSS meke sjene samo na računalu; mobitel ima obične PCF sjene (puno jeftinije).
+if (!IS_MOBILE) installPCSS();
 if (IS_MOBILE) {
   // Mobitel: stvarna veličina prozora iz CSS piksela umjesto mjera MacBook Aira, a FOV i
   // položaj prednje kamere prate orijentaciju (postavlja se svaki frame). Računalo: kao prije.
@@ -78,11 +82,13 @@ try {
 // Mobitel: uvijek kreće s low efektima; render kreće s pixel ratio 1, a dinamička
 // rezolucija ga diže do 1,5 kad uređaj može (ili spušta do 0,6 kad ne može).
 const MOBILE_PIXELS = { start: 1, min: 0.6, max: 1.5 };
-if (IS_MOBILE) quality = 'low';
+// Mobitel: profil 'mobile' (low bez ambijentalne okluzije, lakši bloom i volumetrija, manje sjene).
+if (IS_MOBILE) quality = 'mobile';
 
 // ---------- Renderer ----------
 const canvas = document.getElementById('view');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+// Mobitel: bez MSAA na platnu (slika ionako ide kroz postprocessing i SMAA).
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !IS_MOBILE, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 // Tone mapping (AgX) radi postprocessing; PCSS sjene trebaju BasicShadowMap, a
@@ -90,7 +96,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.NoToneMapping;
 renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.BasicShadowMap;
+renderer.shadowMap.type = IS_MOBILE ? THREE.PCFShadowMap : THREE.BasicShadowMap;
 renderer.shadowMap.autoUpdate = false;
 renderer.info.autoReset = false;
 
@@ -107,7 +113,7 @@ const anaglyph = new AnaglyphRenderer(renderer);
 const profiler = new GpuProfiler(renderer.getContext());
 
 // Postprocessing (N8AO, volumetrija, selektivni bloom, SMAA…).
-const post = new PostPipeline(renderer, scene, camMono);
+const post = new PostPipeline(renderer, scene, camMono, IS_MOBILE ? { bloomLevels: QUALITY.mobile.bloomLevels } : {});
 post.setQuality(quality);
 for (const [name, pass] of Object.entries({
   render: post.renderPass,
@@ -229,6 +235,26 @@ window.addEventListener('resize', resize);
 // Faze: 'loading' (geometrija u workerima, HDR, fontovi) → 'compiling' (shaderi se
 // kompajliraju paralelno) → 'live' (robot se crta). Dok robot nije na ekranu,
 // preko svega stoji crni ekran za učitavanje; praćenje glave i ruku već radi.
+// Mobitel: geometrija robota i manji HDRI dolaze unaprijed pripremljeni (scripts/bake-mobile.mjs),
+// a ekran za učitavanje pokazuje stvarni napredak (preuzeti bajtovi, pa sastavljanje i shaderi).
+const loadProgress = { geometry: 0, hdr: 0, built: 0, compiled: 0, shown: 0 };
+function reportProgress() {
+  if (!IS_MOBILE) return;
+  const total = MOBILE_ASSETS.geometry.bytes + MOBILE_ASSETS.hdr.bytes;
+  const dl = Math.min(1, (loadProgress.geometry + loadProgress.hdr) / total);
+  loader.setProgress(0.8 * dl + 0.08 * loadProgress.built + 0.08 * loadProgress.compiled + 0.04 * loadProgress.shown);
+}
+if (IS_MOBILE) {
+  const base = import.meta.env.BASE_URL;
+  useBakedGeometry(base + MOBILE_ASSETS.geometry.url, (n) => {
+    loadProgress.geometry = n;
+    reportProgress();
+  });
+  useMobileEnvironment(base + MOBILE_ASSETS.hdr.url, (n) => {
+    loadProgress.hdr = n;
+    reportProgress();
+  }, 256);
+}
 const robot = new RobotScene(renderer);
 const robotReady = robot.init();
 let phase = 'loading';
@@ -248,12 +274,25 @@ function activateRobot() {
   resize();
   robot.activate(scene, { post, renderer });
   robot.setQuality(QUALITY[quality]);
+  if (IS_MOBILE) {
+    // Obične PCF sjene: radijus u tekselima (PCSS ga koristi kao veličinu izvora svjetla).
+    for (const [light, size] of [[robot.key, QUALITY.mobile.shadowMap], [robot.rimL, 256]]) {
+      light.shadow.mapSize.set(size, size);
+      light.shadow.radius = 2;
+      light.shadow.map?.dispose();
+      light.shadow.map = null;
+    }
+    loadProgress.built = 1;
+    reportProgress();
+  }
   laidOut = { w: 0, h: 0 }; // forsiraj layout
   // Robot ima puno materijala: kompajliraj ih paralelno (KHR_parallel_shader_compile)
   // umjesto da prvi frame zamrzne praćenje glave.
   phase = 'compiling';
   const done = () => {
     robot.compiled = true;
+    loadProgress.compiled = 1;
+    reportProgress();
     phase = 'live';
   };
   renderer.compileAsync(scene, camMono).then(done, done);
@@ -269,7 +308,11 @@ function onRobotFrame(now, frameMs) {
   stableFrames = frameMs < REVEAL.stableFrameMs ? stableFrames + 1 : 0;
   if (stableFrames < REVEAL.stableFrames && now - firstFrameAt < REVEAL.maxWaitMs) return;
   revealed = true;
+  loadProgress.shown = 1;
+  reportProgress();
   loader.reveal();
+  // Mobitel: kamera (i MediaPipe) tek kad je robot na ekranu, da ne otima mrežu i procesor.
+  if (IS_MOBILE) setTimeout(startMobileCamera, 300);
   // Oči su zatvorene ispod ekrana za učitavanje; otvore se kao pri buđenju dok se on odtapa.
   robot.wake(0.5);
   hints.start(now, 2600);
@@ -295,7 +338,12 @@ function setQuality(name) {
 const loader = new Loader();
 const hud = new Hud();
 const debug = new DebugOverlay();
-const vision = new VisionSource();
+// Mobitel: samo lice (ruke zamjenjuje dodir), manja slika kamere i najviše 20 detekcija u sekundi.
+const vision = new VisionSource(
+  IS_MOBILE
+    ? { hands: false, maxHz: 20, video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 30, max: 30 }, facingMode: 'user' } }
+    : undefined,
+);
 const tracker = new HeadTracker(settings, vision);
 const hands = new HandTracker(settings, vision);
 const mouse = new MouseHead();
@@ -376,10 +424,13 @@ function startCamera() {
       throw err;
     });
 }
-startCamera().catch(() => {});
-// Mobitel: ako se kamera ne javi (preglednik ne pita, Instagramov preglednik…), poruka se
-// pokaže i bez greške — dodir radi cijelo vrijeme.
-if (cameraNote) setTimeout(() => !vision.streaming && !cameraFailed && cameraNote.show(), 8000);
+if (!IS_MOBILE) startCamera().catch(() => {});
+function startMobileCamera() {
+  startCamera().catch(() => {});
+  // Ako se kamera ne javi (preglednik ne pita, Instagramov preglednik…), poruka se
+  // pokaže i bez greške — dodir radi cijelo vrijeme.
+  setTimeout(() => !vision.streaming && !cameraFailed && cameraNote.show(), 8000);
+}
 
 // Vlastiti .glb/.gltf postaje glava robota i dobiva iste oči.
 setupDropzone(async (files) => {

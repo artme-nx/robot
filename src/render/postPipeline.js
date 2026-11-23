@@ -76,10 +76,26 @@ export const QUALITY = {
     bloomLevels: 6,
     shadowMap: 1024,
   },
+  // Mobitel: bez ambijentalne okluzije, lakša volumetrija i bloom, SMAA low, manja sjena.
+  // pixelRatio/minPixelRatio vodi main.js (dinamički 0,6–1,5).
+  mobile: {
+    pixelRatio: 1.5,
+    minPixelRatio: 0.6,
+    ao: false,
+    aoHalfRes: true,
+    aoSamples: 4,
+    aoDenoise: 2,
+    volScale: 0.2,
+    volSteps: 10,
+    smaa: SMAAPreset.LOW,
+    bloomLevels: 4,
+    shadowMap: 512,
+  },
 };
 
 export class PostPipeline {
-  constructor(renderer, scene, camera) {
+  /** @param {{bloomLevels?: number}} o mobitel: manje razina blooma */
+  constructor(renderer, scene, camera, o = {}) {
     this.renderer = renderer;
     this.scene = scene;
     this.camera = camera;
@@ -114,7 +130,7 @@ export class PostPipeline {
       mipmapBlur: true,
       intensity: 1.4,
       radius: 0.62,
-      levels: 8,
+      levels: o.bloomLevels ?? 8,
       luminanceThreshold: 0.9,
       luminanceSmoothing: 0.3,
     });
@@ -173,6 +189,7 @@ export class PostPipeline {
   setQuality(name) {
     const q = QUALITY[name];
     this.quality = name;
+    this.n8ao.enabled = q.ao !== false;
     Object.assign(this.n8ao.configuration, {
       halfRes: q.aoHalfRes,
       aoSamples: q.aoSamples,

@@ -6,11 +6,32 @@
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
+import { fetchBytes } from '../net.js';
+
 const HDR_URL = `${import.meta.env.BASE_URL}env/ferndale_studio_11_2k.hdr`;
 
 let hdrPromise = null;
+// Mobitel: manji HDRI (1k, pečen pri buildu), preuzimanje s napretkom i manja okolina.
+const mobile = { url: null, onProgress: null, resolution: null };
+
+export function useMobileEnvironment(url, onProgress, resolution = 256) {
+  Object.assign(mobile, { url, onProgress, resolution });
+}
 
 export function loadStudioHDR() {
+  if (!hdrPromise && mobile.url) {
+    hdrPromise = fetchBytes(mobile.url, mobile.onProgress).then(async (bytes) => {
+      const blobUrl = URL.createObjectURL(new Blob([bytes]));
+      try {
+        const tex = await new HDRLoader().setDataType(THREE.HalfFloatType).loadAsync(blobUrl);
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        tex.colorSpace = THREE.LinearSRGBColorSpace;
+        return tex;
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+    });
+  }
   if (!hdrPromise) {
     hdrPromise = new HDRLoader().setDataType(THREE.HalfFloatType).loadAsync(HDR_URL).then((tex) => {
       tex.mapping = THREE.EquirectangularReflectionMapping;
@@ -64,7 +85,7 @@ export function buildStudioEnvironment(renderer, hdr, o = {}) {
     rotation = 0,
     tint = '#ffffff',
     strips = [],
-    resolution = 512,
+    resolution = mobile.resolution ?? 512,
     horizon = [-0.32, 0.12],
   } = o;
 

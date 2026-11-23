@@ -128,7 +128,14 @@ class TaskWorker {
 }
 
 export class VisionSource {
-  constructor() {
+  /**
+   * @param {object} o (zadano: računalo)
+   * @param {boolean} o.hands prati i ruke (mobitel: ne — ruke zamjenjuje dodir)
+   * @param {number} o.maxHz najviše detekcija lica u sekundi (0 = svaki frame kamere)
+   * @param {MediaTrackConstraints} o.video postavke kamere
+   */
+  constructor({ hands = true, maxHz = 0, video = null } = {}) {
+    this.opts = { hands, maxHz, video };
     this.video = document.createElement('video');
     this.video.playsInline = true;
     this.video.muted = true;
@@ -190,7 +197,7 @@ export class VisionSource {
   async #start() {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Preglednik ne podržava kameru (potreban je https ili localhost).');
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 }, facingMode: 'user' },
+      video: this.opts.video ?? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 }, facingMode: 'user' },
       audio: false,
     });
     this.video.srcObject = stream;
@@ -214,8 +221,9 @@ export class VisionSource {
         if (m.hands !== undefined) this.#storeHands(m.hands, m.width, m.height, m.handMs);
       };
       try {
-        this.workers =
-          CONFIG.mode === '2w'
+        this.workers = !this.opts.hands
+          ? [new TaskWorker(['face'], onResult)]
+          : CONFIG.mode === '2w'
             ? [new TaskWorker(['face'], onResult), new TaskWorker(['hands'], onResult)]
             : [new TaskWorker(CONFIG.mode === 'face' ? ['face'] : ['face', 'hands'], onResult)];
         this.lastHandSeen = -1e9;
@@ -233,7 +241,7 @@ export class VisionSource {
       this.mode = 'main';
     }
     this.ready = true;
-    this.handsReady = true;
+    this.handsReady = this.opts.hands;
   }
 
   async #startMain() {
@@ -245,7 +253,7 @@ export class VisionSource {
         return Task.createFromOptions(fileset, options('CPU'));
       }
     };
-    [this.faceTask, this.handTask] = await Promise.all([
+    const tasks = await Promise.all([
       make(FaceLandmarker, (delegate) => ({
         baseOptions: { modelAssetPath: MODELS.face, delegate },
         runningMode: 'VIDEO',
@@ -253,15 +261,19 @@ export class VisionSource {
         outputFaceBlendshapes: false,
         outputFacialTransformationMatrixes: true,
       })),
-      make(HandLandmarker, (delegate) => ({
-        baseOptions: { modelAssetPath: MODELS.hands, delegate },
-        runningMode: 'VIDEO',
-        numHands: 2,
-        minHandDetectionConfidence: 0.6,
-        minHandPresenceConfidence: 0.55,
-        minTrackingConfidence: 0.5,
-      })),
+      // Ruke samo kad se prate (mobitel: ne — model se ni ne učitava).
+      this.opts.hands
+        ? make(HandLandmarker, (delegate) => ({
+            baseOptions: { modelAssetPath: MODELS.hands, delegate },
+            runningMode: 'VIDEO',
+            numHands: 2,
+            minHandDetectionConfidence: 0.6,
+            minHandPresenceConfidence: 0.55,
+            minTrackingConfidence: 0.5,
+          }))
+        : null,
     ]);
+    [this.faceTask, this.handTask] = tasks;
     this.delegates = { face: 'glavna nit', hands: 'glavna nit' };
   }
 
@@ -272,6 +284,7 @@ export class VisionSource {
    */
   afterRender() {
     if (this.mode !== 'worker' || !this.ready) return;
+    if (this.opts.maxHz && performance.now() - this.lastSentAt < 1000 / this.opts.maxHz - 2) return;
     const v = this.video;
     if (v.readyState < 2 || !this.#freshFrame()) return;
     if (this.workers.every((w) => w.busy)) return;
@@ -340,7 +353,7 @@ export class VisionSource {
     this.mainToggle = !this.mainToggle;
     const t = Math.round(nowMs);
     const t0 = performance.now();
-    if (this.mainToggle) {
+    if (this.mainToggle || !this.handTask) {
       const res = this.faceTask.detectForVideo(v, Math.max(t, (this._lastFaceTs ?? -1) + 1));
       this._lastFaceTs = t;
       const lm = res.faceLandmarks?.[0];

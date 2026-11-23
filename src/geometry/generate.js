@@ -1,11 +1,25 @@
 // Glavna nit: pokreće generiranje u workerima i vraća THREE.BufferGeometry po dijelu.
 
 import * as THREE from 'three';
+import { loadBakedGeometry } from './baked.js';
 
 const cache = new Map();
 let nextId = 1;
+let baked = null; // mobitel: { url, onProgress, promise }
+
+/** Mobitel: geometrija dolazi iz unaprijed izračunate datoteke (bez workera i računanja). */
+export function useBakedGeometry(url, onProgress) {
+  baked = { url, onProgress, promise: null };
+}
 
 export function generateSDF(name, params = {}) {
+  if (baked) {
+    baked.promise ??= loadBakedGeometry(baked.url, baked.onProgress);
+    return baked.promise.then((all) => {
+      if (!all[name]) throw new Error(`Nema unaprijed izračunate geometrije za ${name}`);
+      return all[name];
+    });
+  }
   const key = name + JSON.stringify(params);
   if (cache.has(key)) return cache.get(key);
   const promise = new Promise((resolve, reject) => {

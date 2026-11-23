@@ -3,3 +3,6 @@ dist
 .DS_Store
 *.local
 .playwright-mcp
+# Generira scripts/bake-mobile.mjs pri buildu
+public/mobile
+src/generated
