@@ -113,6 +113,11 @@ export class HandInput {
       v.gestureSince = tr.gestureSince ?? tr.gestures?.since ?? now;
       v.spread = tr.spread;
       v.pinch = tr.pinch;
+      // Otvorenost (kamera i test); dodir i miš je nemaju (null) i rade gestama dlan / šaka.
+      v.openRaw = tr.openRaw ?? null;
+      v.openT = tr.openT;
+      v.fingers = tr.features?.fingers ?? tr.fingers ?? null;
+      v.edge = !!tr.edge;
       v.label = tr.label;
       v.simulated = !!tr.simulated;
       v.distanceCm = tr.distanceCm;
@@ -205,6 +210,10 @@ export class HandInput {
       gestureAge: 0,
       spread: 0,
       pinch: 0,
+      openRaw: null,
+      openT: undefined,
+      fingers: null,
+      edge: false,
       reach: 0,
       depth: 0,
       logR: NEUTRAL_LOG_R,

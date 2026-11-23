@@ -2,6 +2,8 @@
 // Značajke se računaju iz metričkih 3D "world" landmarka (neovisne o okretu
 // ruke), a geste prolaze kroz stroj stanja s histerezom (strožim uvjetom za
 // ulazak nego za izlazak), vremenom potvrde i cooldownom — bez treperenja.
+// Otvorenost ruke (0 = šaka, 1 = ispruženi prsti) je kontinuirana mjera samo iz
+// četiri prsta (palac se ne broji) i njome se upravlja rastavljanjem robota.
 //
 // Indeksi: 0 zapešće · palac 1–4 · kažiprst 5–8 · srednji 9–12 · prstenjak 13–16 · mali 17–20
 
@@ -47,6 +49,16 @@ const smooth = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
+const lin = (a, b, x) => Math.min(1, Math.max(0, (x - a) / (b - a)));
+
+// Otvorenost prsta: prosjek kutne mjere i mjere dosega (svaka 0 = šaka, 1 = ispružen).
+// Kut: zbroj savijanja u MCP, PIP i DIP zglobu (ispružen ≈ 10–45°, šaka ≈ 200–260°).
+// Doseg: udaljenost vrha od zapešća / udaljenost zgloba (MCP) od zapešća
+// (ispružen ≈ 1,9, šaka ≈ 0,8). Dvije neovisne mjere: kad MediaPipe krivo raspodijeli
+// savijanje po zglobovima (česta pogreška u šaci), doseg ostaje točan i obrnuto.
+const OPEN_BEND = [200, 40];
+const OPEN_REACH = [1.0, 1.8];
+
 const _u = [0, 0, 0];
 const _v = [0, 0, 0];
 const _w = [0, 0, 0];
@@ -72,6 +84,7 @@ export function handFeatures(w) {
   // Ravan prst ≈ 10–45°, opušteno savijen ≈ 70–110°, u šaci ≈ 200–260°.
   const ext = [0, 0, 0, 0, 0];
   const bends = [0, 0, 0, 0, 0];
+  const fingers = [0, 0, 0, 0];
   for (let f = 0; f < 4; f++) {
     const [m, p, d, t] = FINGERS[f];
     sub(w, p, m, _v);
@@ -83,7 +96,11 @@ export function handFeatures(w) {
     bend += angle(_w, _u);
     bends[f + 1] = bend;
     ext[f + 1] = 1 - smooth(65, 150, bend);
+    const reach = dist(w, t, 0) / (dist(w, m, 0) || 1e-3);
+    fingers[f] = 0.5 * lin(OPEN_BEND[0], OPEN_BEND[1], bend) + 0.5 * lin(OPEN_REACH[0], OPEN_REACH[1], reach);
   }
+  // Otvorenost ruke: prosjek prstiju (jedan krivo procijenjen prst ne odlučuje sam).
+  const openness = (fingers[0] + fingers[1] + fingers[2] + fingers[3]) / 4;
   // Palac: koliko je vrh daleko od korijena kažiprsta (ispružen palac tvori "L").
   sub(w, 3, 2, _u);
   sub(w, 4, 3, _v);
@@ -112,24 +129,24 @@ export function handFeatures(w) {
   spreadDeg += Math.max(0, thumbAngle - 25) * 0.35;
   const spread = smooth(20, 56, spreadDeg);
 
-  return { S, ext, bends, pinchDist, indexFar, spreadDeg, spread, thumbAngle };
+  return { S, ext, bends, fingers, openness, pinchDist, indexFar, spreadDeg, spread, thumbAngle };
 }
 
 // Uvjeti ulaska (strogi) i ostanka (blaži) za svaku gestu.
 const ENTER = {
   pinch: (f) => f.pinchDist < 0.27 && f.indexFar > 1.02 && f.ext[1] > 0.08,
-  // Šaka: svi prsti savijeni i palac uvučen (podignut palac nije šaka).
-  fist: (f) => Math.max(f.ext[1], f.ext[2], f.ext[3], f.ext[4]) < 0.28 && f.indexFar < 1.25 && f.ext[0] < 0.62,
+  // Šaka: ruka zatvorena (prosjek četiri prsta), bez obzira na to gdje je palac.
+  fist: (f) => f.openness < 0.2 && f.indexFar < 1.3,
   // Kažiprst: blaži uvjet (opušteno savijeni ostali prsti, palac smije biti blizu)
   // jer ljudi pokazuju prema ekranu nesavršeno. Ne preklapa se s pinch/šaka/dlan.
   point: (f) => f.ext[1] > 0.6 && Math.max(f.ext[2], f.ext[3], f.ext[4]) < 0.5 && f.pinchDist > 0.3,
-  open: (f) => Math.min(f.ext[1], f.ext[2], f.ext[3], f.ext[4]) > 0.72 && f.ext[0] > 0.4,
+  open: (f) => f.openness > 0.8 && Math.min(...f.fingers) > 0.55,
 };
 const STAY = {
   pinch: (f) => f.pinchDist < 0.42 && f.indexFar > 0.9,
-  fist: (f) => Math.max(f.ext[1], f.ext[2], f.ext[3], f.ext[4]) < 0.5,
+  fist: (f) => f.openness < 0.3,
   point: (f) => f.ext[1] > 0.4 && Math.max(f.ext[2], f.ext[3], f.ext[4]) < 0.7 && f.pinchDist > 0.22,
-  open: (f) => Math.min(f.ext[1], f.ext[2], f.ext[3], f.ext[4]) > 0.5 && f.ext[0] > 0.2,
+  open: (f) => f.openness > 0.65,
 };
 // Prioritet kad vrijedi više uvjeta, i vrijeme potvrde (ms) prije aktivacije.
 const PRIORITY = { pinch: 4, fist: 3, point: 2, open: 1, none: 0 };

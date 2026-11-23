@@ -2,6 +2,7 @@
 //   · položaj vrha kažiprsta, točke pincha i dlana u koordinatama ekrana
 //     (NDC, -1..1) i relativna dubina (udaljenost ruke / udaljenost glave),
 //   · gesta (kažiprst, pinch, otvoren dlan, šaka) s histerezom i cooldownom,
+//   · otvorenost ruke 0..1 (četiri prsta, bez palca) za rastavljanje,
 //   · raširenost prstiju, "tap" prema kameri,
 // te okvir od dvije ruke (palci + kažiprsti tvore pravokutnik).
 //
@@ -19,6 +20,7 @@ const Z_REF = 40; // cm — referentna udaljenost ruke za mapiranje kadra na ekr
 const GAIN = 1.3; // središnjih ~77 % kadra pokriva cijeli ekran
 const Y_OFFSET = 0.12; // ruke su prirodno malo niže od osi kamere
 const LOST_MS = 220; // ruka "živi" još malo nakon zadnje detekcije (bez treperenja)
+const EDGE = 0.015; // landmark ovoliko blizu ruba slike = ruka izlazi iz kadra (nepouzdano)
 const PALM_SEGMENTS = [
   [0, 5],
   [0, 9],
@@ -145,6 +147,7 @@ export class HandTracker {
       y0 = Math.min(y0, L[i * 3 + 1]);
       y1 = Math.max(y1, L[i * 3 + 1]);
     }
+    track.edge = x0 < EDGE || y0 < EDGE || x1 > 1 - EDGE || y1 > 1 - EDGE;
     const mx = (x1 - x0) * 0.08, my = (y1 - y0) * 0.08;
     track.box = { x0: x0 - mx, y0: y0 - my, x1: x1 + mx, y1: y1 + my };
 
@@ -199,6 +202,8 @@ export class HandTracker {
     // --- Geste ---
     const feat = handFeatures(w);
     track.features = feat;
+    track.openRaw = feat.openness; // otvorenost 0..1 (zaglađuje se u OpenControl)
+    track.openT = nowMs; // vrijeme uzorka: novi uzorak samo s novom detekcijom
     track.gesture = track.gestures.update(feat, nowMs);
     track.spread = track.spreadFilter.filter(feat.spread, t);
     track.pinch = 1 - Math.min(1, Math.max(0, (feat.pinchDist - 0.2) / 0.32));

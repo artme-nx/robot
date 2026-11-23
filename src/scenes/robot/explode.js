@@ -17,6 +17,7 @@ export class ExplodeController {
   constructor() {
     this.parts = [];
     this.target = 0;
+    this.freq = 1.0; // Hz globalne opruge (pri dnu sklapanja rukom brža: "magnet")
     this.p = 0;
     this.pv = 0;
     this.seats = []; // dijelovi koji su u ovom frameu sjeli na mjesto [{ part, speed }]
@@ -67,7 +68,7 @@ export class ExplodeController {
   update(dt) {
     this.seats.length = 0;
     // Globalni napredak: kritično prigušena opruga (točno rješenje).
-    const w = 2 * Math.PI * 1.0;
+    const w = 2 * Math.PI * this.freq;
     const e = this.p - this.target;
     const k = Math.exp(-w * dt);
     const tmp = (this.pv + w * e) * dt;

@@ -17,6 +17,7 @@ import { buildInternals } from './internals.js';
 import { IS_MOBILE } from '../../device.js';
 import { connectionReport, fitReport, clearanceReport } from './inspect.js';
 import { ExplodeController } from './explode.js';
+import { OpenControl, OPEN } from '../../interaction/openControl.js';
 import {
   ceramicMaterial,
   carbonMaterial,
@@ -142,6 +143,7 @@ export class RobotScene {
     this.twitchV = new THREE.Vector2();
     this.nextTwitch = 0;
     this.explodeTarget = 0;
+    this.openControl = new OpenControl(); // kamera: otvorenost ruke → količina rastavljanja
     this.openHist = [];
     this.openLatched = false;
     this.wasExploded = false;
@@ -818,7 +820,7 @@ export class RobotScene {
     const followHead = gazeMode === 3;
     const followMe = followHead && ctx.cameraMode !== 'orbit';
 
-    // Ruke: kažiprst privlači pogled, dodir lica plaši/ljuti, dlan rastavlja, šaka sklapa.
+    // Ruke: kažiprst privlači pogled, dodir lica plaši/ljuti, otvorenost ruke rastavlja.
     this.#updateHands(dt, ctx.hand);
     const attn = this.fingerAttn;
     const finger = this.fingerWorld;
@@ -963,8 +965,6 @@ export class RobotScene {
     const T = this.time;
     const alive = hand?.hands?.filter((v) => v.alive) ?? [];
     const pointer = alive.find((v) => v.gesture === 'point');
-    const open = alive.find((v) => v.gesture === 'open');
-    const fist = alive.find((v) => v.gesture === 'fist');
 
     // Pogled: brzo na prst (sakada), polako natrag na gledatelja.
     const goal = pointer ? 1 : 0;
@@ -973,9 +973,21 @@ export class RobotScene {
     const fl = this.headContent.worldToLocal(_v.copy(this.fingerWorld));
     this.fingerEyeDist = fl.length();
 
-    // Rastavljanje: dok je dlan otvoren, količina prati raširenost prstiju; kad dlan
-    // nestane, ostaje rastavljeno (najveća razina iz zadnjih ~0,45 s jer se prsti
-    // skupe prije spuštanja ruke); šaka sve vrati na mjesto.
+    // Rastavljanje kamerom: otvorenost ruke izravno zadaje količinu (rašireni dlan =
+    // rastavljeno, zatvorena ruka = sklopljeno; vidi openControl.js). Kad ruka ode,
+    // stanje ostaje.
+    const simulated = alive.filter((v) => v.openRaw == null);
+    if (this.custom || simulated.length) {
+      this.openControl.cancel();
+    } else {
+      const goal = this.openControl.update(T, dt, hand?.hands ?? [], this.explodeTarget);
+      if (goal != null) this.explodeTarget = goal;
+    }
+    // Dodir i miš (bez otvorenosti) kao i prije: dok je dlan otvoren, količina prati
+    // raširenost prstiju; kad dlan nestane, ostaje rastavljeno (najveća razina iz zadnjih
+    // ~0,45 s jer se prsti skupe prije spuštanja); šaka sve vrati na mjesto.
+    const open = simulated.find((v) => v.gesture === 'open');
+    const fist = simulated.find((v) => v.gesture === 'fist');
     if (open && !this.custom) {
       const amt = THREE.MathUtils.smoothstep(open.spread, 0.08, 0.85);
       this.openHist.push([T, amt]);
@@ -989,6 +1001,8 @@ export class RobotScene {
     }
     if (fist) this.explodeTarget = 0;
     this.explode.target = this.explodeTarget;
+    // Magnet: zadnji dio sklapanja rukom ide brže, pa dijelovi sjednu s odskokom i klikom.
+    this.explode.freq = this.openControl.magnet && this.explodeTarget === 0 && this.explode.p < OPEN.magnetBelow ? OPEN.magnetHz : 1;
 
     // Dodir: vrh prsta blizu površine glave (SDF glave u prostoru glave, cm).
     const toucher = pointer ?? alive.find((v) => v.gesture === 'none');

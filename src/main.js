@@ -884,7 +884,7 @@ function frame() {
     mode === 'orbit'
       ? `ORBIT az ${orbit.az.toFixed(1)}° el ${(orbit.effectiveEl ?? orbit.el).toFixed(1)}° zoom ${(1 / orbit.zoom).toFixed(2)}×${orbit.calibrating ? ' · kalibriram' : ''}`
       : CAMERA_BADGE[mode];
-  debug.draw({ tracker, hands, hand, vision, source, eye: pose.eye, rect, stereo, sceneName: robot.name, quality: `${quality} ${renderer.getPixelRatio().toFixed(2)}×`, orbitInfo });
+  debug.draw({ tracker, hands, hand, vision, source, eye: pose.eye, rect, stereo, sceneName: robot.name, quality: `${quality} ${renderer.getPixelRatio().toFixed(2)}×`, orbitInfo, open: debug.visible ? { ...robot.openControl.debug(), target: robot.explodeTarget, p: robot.explode.p } : null });
   panel.showMeasurement(pose.eye, source);
   followPanel.showState(
     cameraFollow
@@ -920,8 +920,13 @@ function setHandOverride(o) {
   const tip = o.tip ?? [0, 0];
   const pinch = o.pinchAt ?? tip;
   const track = prev?.track ?? { id: 'test', label: 'T', simulated: true, pts: { tip: [0, 0, 0], pinch: [0, 0, 0], palm: [0, 0, 0] } };
-  if (track.gesture !== (o.gesture ?? 'point')) track.gestureSince = performance.now();
-  track.gesture = o.gesture ?? 'point';
+  // open: otvorenost ruke 0..1 kao s kamere (prolazi kroz glađenje, mrtve zone i držanje).
+  const gesture = o.gesture ?? (o.open != null ? 'none' : 'point');
+  if (track.gesture !== gesture) track.gestureSince = performance.now();
+  track.gesture = gesture;
+  track.openRaw = o.open ?? null;
+  track.fingers = o.fingers ?? null;
+  track.edge = !!o.edge;
   track.spread = o.spread ?? 0;
   track.pinch = track.gesture === 'pinch' ? 1 : 0;
   track.pts.tip = [tip[0], tip[1], logR];
@@ -947,6 +952,8 @@ window.__ht = {
   /**
    * Ruka bez kamere: { tip:[x,y] (NDC), r (udaljenost ruke / glave, 0.62 = neutralno),
    * gesture: 'point'|'pinch'|'open'|'fist'|'none', spread, two?: {rect} }; null vraća kameru/miš.
+   * open: 0..1 otvorenost ruke kao s kamere (rastavljanje prati otvorenost; fingers: [4] po prstu,
+   * edge: ruka na rubu kadra); gesture: 'away' = ruka nestane (kao kad je kamera izgubi).
    */
   setHand: (o) => setHandOverride(o),
   tap: (ndc) => {
@@ -985,6 +992,8 @@ window.__ht = {
     gazeMode: gazeModes[cameraMode],
     headYawDeg: +THREE.MathUtils.radToDeg(robot.lastGaze?.head.x ?? 0).toFixed(1),
     cross: +robot.cross.toFixed(2),
+    explode: { target: +robot.explodeTarget.toFixed(3), p: +robot.explode.p.toFixed(3), amount: +robot.explode.amount.toFixed(3), magnet: robot.openControl.magnet },
+    open: robot.openControl.debug(),
     eyeContactDeg: robot.eyeContactDeg == null ? null : +robot.eyeContactDeg.toFixed(2),
     quality,
     pixelRatio: renderer.getPixelRatio(),

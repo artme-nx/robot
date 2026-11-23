@@ -1,5 +1,5 @@
 // D: mala slika kamere s točkama očiju i kosturima ruku, procijenjeni x/y/z u cm,
-// prepoznata gesta, 3D položaj vrha prsta, FPS.
+// prepoznata gesta, otvorenost ruke (0..1) i rastavljanje, 3D položaj vrha prsta, FPS.
 
 import { GESTURE_LABEL } from '../tracking/gestures.js';
 
@@ -11,6 +11,12 @@ const HAND_LINKS = [
   [13, 17], [0, 17], [17, 18], [18, 19], [19, 20],
 ];
 const HAND_COLOR = { L: '#ffb86b', D: '#7fd8ff', '?': '#d6dbe3' };
+const OPEN_MODE = { active: 'prati ruku', hold: 'drži', idle: 'čeka dlan ili šaku' };
+const n2 = (x) => (x == null ? ' —  ' : x.toFixed(2));
+const bar = (x, n = 10) => {
+  const k = Math.round(Math.min(1, Math.max(0, x ?? 0)) * n);
+  return '█'.repeat(k) + '░'.repeat(n - k);
+};
 
 export class DebugOverlay {
   constructor() {
@@ -39,7 +45,7 @@ export class DebugOverlay {
     }
   }
 
-  draw({ tracker, hands, hand, vision, source, eye, rect, stereo, sceneName, quality, orbitInfo }) {
+  draw({ tracker, hands, hand, vision, source, eye, rect, stereo, sceneName, quality, orbitInfo, open }) {
     if (!this.visible) return;
     const { ctx, canvas } = this;
     const cw = canvas.width, ch = canvas.height;
@@ -110,7 +116,8 @@ export class DebugOverlay {
         ctx.font = '600 10px ui-monospace, monospace';
         ctx.textAlign = 'center';
         ctx.fillStyle = 'rgba(8,10,14,0.75)';
-        const label = `${t.label} ${GESTURE_LABEL[t.gesture] ?? t.gesture}`;
+        const o = t.features?.openness;
+        const label = `${t.label} ${GESTURE_LABEL[t.gesture] ?? t.gesture}${o != null ? ` · ${o.toFixed(2)}` : ''}`;
         const w = ctx.measureText(label).width + 8;
         ctx.fillRect(wx - w / 2, wy + 4, w, 14);
         ctx.fillStyle = col;
@@ -152,6 +159,21 @@ export class DebugOverlay {
       lines.push('ruke   —');
     }
     if (hand?.frame?.valid) lines.push('okvir  dvije ruke ▭');
+    // Otvorenost ruke (zaglađena, 0 = šaka … 1 = dlan) i što rastavljanje radi s njom.
+    if (open) {
+      const h = open.active ?? open.hands[0] ?? null;
+      const who = h ? hand?.hands.find((v) => v.id === h.id)?.label ?? '' : '';
+      if (h) {
+        lines.push(`otvor.  ${who} ${n2(h.o)} ${bar(h.o)} sirovo ${n2(h.raw)}`);
+        const flags = [h.edge ? 'rub kadra' : '', h.speed > 2.4 ? 'brzo' : ''].filter(Boolean).join(', ');
+        if (h.fingers) lines.push(`        prsti ${h.fingers.map((x) => x.toFixed(2)).join(' ')}${flags ? ` · ${flags}` : ''}`);
+        else if (flags) lines.push(`        ${flags}`);
+      } else {
+        lines.push(hand?.hands.some((v) => v.alive) ? 'otvor.  — (dodir/miš: geste dlan i šaka)' : 'otvor.  — (nema ruke)');
+      }
+      lines.push(`rastav. cilj ${n2(open.target)} · napredak ${n2(open.p)}`);
+      lines.push(`        ${OPEN_MODE[open.mode] ?? open.mode}${open.reason ? ` (${open.reason})` : ''}${open.latched ? ' · magnet' : ''}`);
+    }
     lines.push(`FPS    ${this.fps.toFixed(0)}`);
     if (vision?.ready) {
       const where = vision.mode === 'worker' ? `worker ${vision.delegates?.face ?? ''}` : 'glavna nit';

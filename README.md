@@ -6,7 +6,7 @@ ponaša kao **prozor** — kad pomakneš glavu, perspektiva se mijenja kao u stv
 Sony Spatial Reality Display). Hard-surface android poprsje gleda točno u tvoje oči.
 
 **Glava upravlja kamerom, ruke upravljaju robotom:** ista kamera prati i do dvije ruke — robot prati vrh
-tvog prsta, ljuti se kad ga diraš i rastavlja se na otvoren dlan; dvjema rukama uokviriš kadar kao redatelj.
+tvog prsta, ljuti se kad ga diraš i rastavlja se koliko otvoriš dlan; dvjema rukama uokviriš kadar kao redatelj.
 
 Dva načina, gumb u dnu ekrana (ili `G`): **FOLLOW ME** (zadan) — kamera miruje, a robot okreće glavu i oči
 za tobom; **LOOK AROUND** — ti kružiš oko robota, a on stoji mirno. Sučelje je na engleskom (posjetitelji
@@ -89,13 +89,13 @@ pmndrs `postprocessing` + N8AO, meshoptimizer za generiranu geometriju.
   (~30° po oku na 14 cm, do 46° na ~7 cm). Dodir lica:
   glava ustukne na opruzi, oči bljesnu, blende se zatvore pa otvore; prst blizu dulje od ~2 s i robot se naljuti
   (crvene oči, jače pulsiranje, servo trzaji, stisnuti kapci), a kad makneš ruku, smiri se.
-- **Rastavljanje:** otvoren dlan s raširenim prstima rastavi glavu i poprsje kao tehnički prikaz proizvoda
-  (količina prati raširenost prstiju). Kabeli vrata se uredno iskopčaju na ploči lubanje (utikač izađe iz
+- **Rastavljanje:** otvoren dlan rastavi glavu i poprsje kao tehnički prikaz proizvoda
+  (količina izravno prati koliko je ruka otvorena — vidi [Otvorenost ruke](#otvorenost-ruke--rastavljanje)). Kabeli vrata se uredno iskopčaju na ploči lubanje (utikač izađe iz
   priključka), maska se preklopi gore kao vizir, polovice kranija izađu u stranu i otvore se unatrag kao školjka
   (unutrašnjost se vidi i iz poluprofila), uši odu u stranu, slojevi očiju se razmaknu duž optičke osi, hladnjak s
   ventilatorom se podigne s vodenog bloka, a prstenovi reaktora se rašire. Unutra je kavez s prozorima i puna
-  mehanika — vidi [Unutrašnjost](#unutrašnjost). Šaka sve vrati obrnutim redom: dijelovi sjednu s malim
-  odskokom, spojevi kratko zasvijetle, blende škljocnu.
+  mehanika — vidi [Unutrašnjost](#unutrašnjost). Zatvaranje ruke sve postupno vrati obrnutim redom, a zadnji
+  dio ide kao magnet: dijelovi sjednu s malim odskokom, spojevi kratko zasvijetle, blende škljocnu.
 - **Vlastita glava:** ispusti .glb/.gltf glave bilo gdje u prozor — model sjeda na vrat, dobiva duplje i
   iste mehaničke oči (automatsko pozicioniranje). `↑`/`↓` fino pomiče oči, `[`/`]` veličina, `R` okret.
 
@@ -148,12 +148,31 @@ relativno na udaljenost tvoje glave). Bez kamere geste se mogu glumiti mišem (v
 | --- | --- | --- |
 | **Ispruženi kažiprst** | kažiprst ispružen, ostali prsti (barem opušteno) savijeni | **oči prate vrh prsta**; bliže od ~20 cm lica se **prekriže** (jasno prema nosu) i blende se suze; `H` uključuje marker na vrhu prsta |
 | **Dodir** (kažiprstom) | primakni prst robotovu licu | robot se **trgne** (glava ustukne, oči bljesnu, blende se zatvore pa otvore); prst blizu > ~2 s → **ljutnja** (crvene oči, pulsiranje, servo trzaji) |
-| **Otvoren dlan** | svi prsti ispruženi i **rašireni** | **rastavljanje** glave i poprsja; količina prati koliko su prsti rašireni (ostaje kad spustiš ruku) |
-| **Šaka** | svi prsti savijeni, palac uvučen | **sklapanje** obrnutim redom, s "klikom" i bljeskom spojeva; vraća normalni kadar |
+| **Otvoren dlan** | prsti ispruženi | **rastavljanje** glave i poprsja; količina izravno prati otvorenost ruke (ostaje kad spustiš ruku) |
+| **Zatvaranje ruke / šaka** | prsti se savijaju; palac je svejedno gdje | robot se **postupno sklapa**; zatvorena ruka = sklopljen, kraj s "klikom", bljeskom spojeva i škljocajem blende; šaka vraća normalni kadar |
 | **Okvir od dvije ruke** | palci i kažiprsti tvore pravokutnik (dva "L"), drži ~0,7 s | **redateljski izrez kadra** |
 
 Prepoznavanje ima histerezu (strožiji uvjet za ulazak u gestu nego za izlazak), vrijeme potvrde i cooldown,
 pa geste ne trepere. Dok dvije ruke tvore okvir, pojedinačne geste se ne tumače.
+
+### Otvorenost ruke → rastavljanje
+
+Rastavljanje kamerom nije gesta nego kontinuirana mjera (`src/tracking/gestures.js` + `src/interaction/openControl.js`):
+
+- **Otvorenost 0–1** računa se samo iz četiri prsta, **palac se ne broji**. Za svaki prst prosjek dviju
+  neovisnih mjera iz metričkih "world" landmarka: zbroj savijanja u tri zgloba (ispružen ≈ 10–45°, šaka ≈
+  200–260°) i doseg (udaljenost vrha od zapešća / udaljenost zgloba od zapešća). Ruka = prosjek prstiju, pa
+  jedan krivo procijenjen prst ne odlučuje sam. Ne ovisi o okretu ruke.
+- **Glatko:** One Euro filtar na otvorenosti, **mrtve zone** na oba kraja (ispod 0,15 = sklopljeno, iznad
+  0,85 = potpuno rastavljeno, linearno između), pa opruga rastavljanja. Pri dnu je **magnet** (otvorenost
+  ispod 0,22 uz savijen kažiprst, izlaz iznad 0,28): robot se sam dovrši sklopiti brže, pa dijelovi sjednu s
+  odskokom i klikom, a blenda škljocne.
+- **Preuzimanje:** ruka upravlja tek kad se jasno pokaže — otvoren dlan (≥ 0,75, ~0,15 s) ili zatvorena ruka
+  (~0,25 s), mirno i cijela u kadru. Ruka koja samo prolazi ili pokazuje kažiprstom ne mijenja ništa.
+- **Gubitak ruke:** kad kamera na trenutak izgubi ruku, stanje ostaje točno gdje je bilo; ako se ruka u ~1 s
+  vrati u sličnom položaju, nastavlja bez skoka. Brz pokret ili ruka na rubu kadra (spuštanje) vrate cilj
+  na vrijednost od prije ~0,35 s (ruka se pri spuštanju opusti) i stanje ostaje. Prelazak u kažiprst isto.
+- Dodir na mobitelu i miš (`O` / `Z`) rade kao i prije (geste dlan / šaka).
 
 ### Redateljski okvir
 
@@ -190,7 +209,7 @@ npm run preview   # lokalni pregled builda
 | `E` | boja očiju robota (cijan / jantar) |
 | `Q` | kvaliteta: high / low |
 | `F` | cijeli zaslon (preporučeno) |
-| `D` | debug overlay — slika kamere s točkama očiju i kosturima ruku, prepoznata gesta, 3D položaj prsta, x/y/z glave u cm, FPS, azimut/elevacija/zoom, ritam detekcije |
+| `D` | debug overlay — slika kamere s točkama očiju i kosturima ruku, prepoznata gesta, **otvorenost ruke 0–1** (zaglađena i sirova, po prstima) i stanje rastavljanja, 3D položaj prsta, x/y/z glave u cm, FPS, azimut/elevacija/zoom, ritam detekcije |
 | `C` | kalibracijski panel |
 | `S` | crveno-cijan anaglif (stereo) |
 | `K` | miš glumi glavu (kotačić = naprijed/natrag) |
@@ -428,7 +447,8 @@ iz `window.screenX/Y`, pa je "prozor u svijet" upravo onaj dio ekrana koji prozo
   pa okret ruke ne smeta), relativno na udaljenost glave: ruka u neutralnom položaju drži točku ispred objekta,
   primicanje ekranu je gura prema objektu. **One Euro** filter + glatka interpolacija na 60 fps.
 - **Geste** (`src/tracking/gestures.js`) s histerezom, vremenom potvrde i cooldownom: ispruženi kažiprst, pinch,
-  otvoren dlan (i koliko su prsti rašireni), šaka, brzi tap prema kameri, okvir od dvije ruke.
+  otvoren dlan, šaka (oboje iz otvorenosti ruke, bez palca), brzi tap prema kameri, okvir od dvije ruke.
+  Otvorenost ruke 0–1 kontinuirano upravlja rastavljanjem (`src/interaction/openControl.js`).
   Robot reagira na ispruženi kažiprst, dodir, otvoren dlan, šaku i okvir; pinch i tap se i dalje prepoznaju
   (vidi debug overlay `D`), ali robot na njih ne reagira.
 - Kad ruka zakloni oči, položaj glave se zadrži, a kad se lice opet vidi, kamera glatko nastavi.
@@ -455,7 +475,9 @@ frameu bez vsynca), `robot` (objekt scene; `robot.wake()` ponovno budi oči; `ro
 glave u stupnjevima, `cross` — koliko su oči prekrižene, 0–1; `mobile`, `halfRate` — 30 fps način,
 `cameraFailed`, `cameraNote`). Za mobilne testove: `camera` (render kamera, za projekciju točaka na ekran),
 `touch` (stanje dodira) i `setFrameCost(ms)` (umjetni trošak framea — simulacija slabog uređaja).
-Ruke: `setHand({ tip: [x, y], r, gesture, spread, frame })` (NDC vrha prsta, `r` = udaljenost ruke / udaljenost
+Ruke: `setHand({ tip: [x, y], r, gesture, spread, open, fingers, edge, frame })` (`open` = otvorenost 0–1 kao s
+kamere — prolazi kroz glađenje, mrtve zone, magnet i držanje; `gesture: 'away'` = kamera izgubi ruku; `state().explode`
+i `state().open` = cilj/napredak rastavljanja i stanje upravljanja; NDC vrha prsta, `r` = udaljenost ruke / udaljenost
 glave, 0,62 je neutralno; `frame: [x0, y0, x1, y1]` = okvir od dvije ruke u NDC; `null` vraća kameru/miš),
 `tap([x, y])`, `markers(bool)` i `hand()` (trenutno stanje).
 Vrijeme učitavanja: `performance` oznake `robot:first-frame` (prvi frame robota, još ispod ekrana za
