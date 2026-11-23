@@ -46,6 +46,20 @@ kadar bez stiskanja, a bez kamere se njime upravlja dodirom — vidi [Mobitel](#
 | --- | --- |
 | ![Redateljski okvir](docs/screenshots/redateljski-okvir.jpg) | ![Izrez kadra](docs/screenshots/redateljski-kadar.jpg) |
 
+**Unutrašnjost** (rastavljena glava izbliza — vidi [Unutrašnjost](#unutrašnjost)):
+
+| Sprijeda | Poluprofil | Odozgo |
+| --- | --- | --- |
+| ![Unutrašnjost sprijeda](docs/screenshots/unutrasnjost-sprijeda.jpg) | ![Unutrašnjost s boka](docs/screenshots/unutrasnjost-bok.jpg) | ![Unutrašnjost odozgo](docs/screenshots/unutrasnjost-odozgo.jpg) |
+
+| Jantarne oči → cijan tekućina | Druga strana | Reaktor u prsima |
+| --- | --- | --- |
+| ![Jantarne oči](docs/screenshots/unutrasnjost-jantar.jpg) | ![Unutrašnjost lijevo](docs/screenshots/unutrasnjost-lijevo.jpg) | ![Reaktor](docs/screenshots/unutrasnjost-poprsje.jpg) |
+
+| Sklopljen: tekućina kroz procjep sljepoočnice | Vrat straga: priključci na ploči lubanje |
+| --- | --- |
+| ![Sljepoočnica](docs/screenshots/sljepoocnica-sklopljena.jpg) | ![Priključci vrata](docs/screenshots/vrat-prikljucci.jpg) |
+
 Stack: Vite + vanilla JS + Three.js, MediaPipe Tasks Vision (FaceLandmarker + HandLandmarker),
 pmndrs `postprocessing` + N8AO, meshoptimizer za generiranu geometriju.
 
@@ -76,15 +90,53 @@ pmndrs `postprocessing` + N8AO, meshoptimizer za generiranu geometriju.
   glava ustukne na opruzi, oči bljesnu, blende se zatvore pa otvore; prst blizu dulje od ~2 s i robot se naljuti
   (crvene oči, jače pulsiranje, servo trzaji, stisnuti kapci), a kad makneš ruku, smiri se.
 - **Rastavljanje:** otvoren dlan s raširenim prstima rastavi glavu i poprsje kao tehnički prikaz proizvoda
-  (količina prati raširenost prstiju). Kabeli vrata se iskopčaju i bočni klipovi uvuku, maska se preklopi gore kao
-  vizir, polovice kranija i uši odu u stranu, slojevi očiju se razmaknu duž optičke osi; unutra su kavez s
-  prozorima, procesor s hladnjakom, servo motori, optički kabeli, kralježnica i reaktor u prsima. Šaka sve vrati
-  obrnutim redom: dijelovi sjednu s malim odskokom, spojevi kratko zasvijetle, blende škljocnu.
+  (količina prati raširenost prstiju). Kabeli vrata se uredno iskopčaju na ploči lubanje (utikač izađe iz
+  priključka), maska se preklopi gore kao vizir, polovice kranija izađu u stranu i otvore se unatrag kao školjka
+  (unutrašnjost se vidi i iz poluprofila), uši odu u stranu, slojevi očiju se razmaknu duž optičke osi, hladnjak s
+  ventilatorom se podigne s vodenog bloka, a prstenovi reaktora se rašire. Unutra je kavez s prozorima i puna
+  mehanika — vidi [Unutrašnjost](#unutrašnjost). Šaka sve vrati obrnutim redom: dijelovi sjednu s malim
+  odskokom, spojevi kratko zasvijetle, blende škljocnu.
 - **Vlastita glava:** ispusti .glb/.gltf glave bilo gdje u prozor — model sjeda na vrat, dobiva duplje i
   iste mehaničke oči (automatsko pozicioniranje). `↑`/`↓` fino pomiče oči, `[`/`]` veličina, `R` okret.
 
 Dok se robot priprema (geometrija u workerima, HDR, fontovi, shaderi), stoji crni ekran s natpisom
 *Artificial Media*; kad se robot iscrta i render se smiri, ekran se glatko odtopi.
+
+## Unutrašnjost
+
+Glavni kadar za Reel je rastavljena glava izbliza, pa je unutrašnjost građena kao filmski model: slojevi,
+vijci i zakovice, oznake, različiti materijali (titanij, krom, anodizirani aluminij, bakar, staklo, tiskana
+ploča) i puno kretanja. Sve stoji unutar kaveza i ne prolazi kroz ljusku (provjereno automatski, vidi dolje).
+
+- **Svi kabeli i cijevi su spojeni.** Oba kraja svake veze imaju vidljiv konektor (kromirani nos, anodizirano
+  tijelo s nazubljenim prstenom i gumena manžeta; kod cijevi s tekućinom matica i rukavac) koji sjedi u
+  priključku s prirubnicom na dijelu na koji se spaja. Vrat ima ploču na dnu lubanje i nosač u otvoru vrata na
+  poprsju: kralježnica sjedi u ležajevima, hidraulički klipovi na ušicama sa svornjacima, crijevo grla i kabeli u
+  priključcima. Kabeli se pri okretu glave savijaju i ostaju spojeni; pri rastavljanju se pleteni kabeli vrata
+  iskopčaju (utikač izađe 1,5 cm iz priključka, oba ostaju vidljiva), a crijevo i cijevi hlađenja se rastegnu.
+- **Tekuće hlađenje:** prozirne cijevi s jarko narančastom svjetlećom tekućinom — vidi se strujanje i mjehurići.
+  Krug: spremnik s razinom (mjehurići se dižu) → pumpa s rotorom koji se vrti iza staklenog prozora → lijeva
+  sljepoočnica → vodeni blok na procesoru (vijugavi kanal kroz akril) → hladnjak s rebrima i ventilatorom →
+  desna sljepoočnica → spremnik. Grana iz pumpe ide kroz prolaze u dnu lubanje niz vrat do reaktora u prsima i
+  natrag u spremnik. Cijevi uz sljepoočnice prolaze kroz procjep panela, pa se **sjaj tekućine vidi i kad je glava
+  sklopljena**. Kad su oči jantarne, tekućina je **cijan**; kad je robot ljut, teče ~2,4× brže i jače mjehuri.
+- **Mehanika:** središnji **žiroskop** — tri ugniježđena prstena (s izrezima, nazubljen, kromiran) na jarmu oko
+  svjetleće jezgre u žičanom kavezu; dvije **turbine** s urezima na bokovima (disk i protuturbina vrte se u
+  suprotnim smjerovima, različitim brzinama) i **podatkovni bubanj** s ručicom straga dolje; **matična ploča** s
+  procesorom, čipovima i nožicama, kondenzatorima, prigušnicama, slabo svijetlećim bakrenim stazama i LED-icama
+  koje nepravilno trepere; **optička vlakna** od stražnjih kućišta očiju do ploče kroz koja putuju svjetlosni
+  impulsi prema procesoru; servo motori očiju i čeljusti s kabelima; **reaktor** sa segmentiranim prstenovima koji
+  se vrte u suprotnim smjerovima. Govorni modul iza usta je zasebna grupa (`speechModule`) za govor koji dolazi.
+- **Kretanje i strujanje rastu s rastavljanjem.** Sklopljen robot ne računa unutrašnjost (skrivena je); osvježavaju
+  se samo cijevi uz sljepoočnice i vrat, koji se vide.
+- **Mobitel:** lakša verzija — manje sitnih dijelova i segmenata cijevi, bez zakovica, natpisa, sitnih servo kabela
+  i dodatnog svjetla žiroskopa; tekućina, žiroskop, turbine i reaktor ostaju.
+- **Automatska provjera** (`src/scenes/robot/inspect.js`, preko `window.__ht.robot`): `connectionReport()` za
+  svaki kraj svakog kabela, cijevi, klipa i kralježnice mjeri udaljenost kraja cijevi do utikača i vrha utikača
+  do ušća priključka; `fitReport()` provjerava da je svaki vrh unutarnjih dijelova (i rotirajućih u 8 položaja)
+  unutar kaveza; `clearanceReport()` da središnja linija svake cijevi ne prolazi kroz druge dijelove, cijevi,
+  kavez ni panele. Rezultat (76 krajeva na računalu, 56 na mobitelu): sklopljeno, puni okret glave lijevo/desno/
+  gore/dolje i rastavljeno — svi spojeni s odstupanjem 0,0000 cm, ništa izvan kaveza, nijedno preklapanje.
 
 ## Ruke — geste
 
@@ -382,7 +434,9 @@ iz `window.screenX/Y`, pa je "prozor u svijet" upravo onaj dio ekrana koji prozo
 - Kad ruka zakloni oči, položaj glave se zadrži, a kad se lice opet vidi, kamera glatko nastavi.
 
 - **Ruke u sceni:** robot (`src/scenes/robot/`: `explode.js` redoslijed i opruge rastavljanja, `internals.js`
-  unutarnja mehanika, kavezi glave i poprsja u `geometry/robotModels.js`) i redateljski okvir
+  unutarnja mehanika, `cooling.js` dijelovi tekućeg hlađenja i shader tekućine, `connectors.js` utikači,
+  priključci i kabeli (instancirani po prostoru), `neck.js` vrat, `layout.js` točke spajanja vrata, `inspect.js`
+  automatske provjere; kavezi glave i poprsja u `geometry/robotModels.js`) i redateljski okvir
   (`src/interaction/directorFrame.js`).
 
 ### Test API
@@ -395,7 +449,8 @@ ponašanje FOLLOW ME s kamerom; `null` vraća pravu kameru), `setFollow({ headGa
 `follow` (postavke panela T, bez spremanja), `state().eyeContactDeg` (kut između pogleda i smjera prema
 render kameri), `setGazeMode(1|2|3)` (pogled za trenutni
 način kamere), `blink()` (okini zatvarač odmah), `hints` (upute: `isDone(id)`, `items`), `benchmark(n)` (ms po
-frameu bez vsynca), `robot` (objekt scene; `robot.wake()` ponovno budi oči) i `state()` (`phase`: `loading` →
+frameu bez vsynca), `robot` (objekt scene; `robot.wake()` ponovno budi oči; `robot.explodeTarget` 0–1 rastavlja;
+`robot.connectionReport()`, `robot.fitReport()`, `robot.clearanceReport()` — provjere unutrašnjosti) i `state()` (`phase`: `loading` →
 `compiling` → `live`; `ready`: robot je na ekranu; `viewMode`, `cameraMode`, `gazeMode`, `headYawDeg` — okret
 glave u stupnjevima, `cross` — koliko su oči prekrižene, 0–1; `mobile`, `halfRate` — 30 fps način,
 `cameraFailed`, `cameraNote`). Za mobilne testove: `camera` (render kamera, za projekciju točaka na ekran),

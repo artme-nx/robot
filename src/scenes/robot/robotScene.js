@@ -12,7 +12,10 @@ import { createRingTextTexture, loadFonts } from '../../render/proceduralTexture
 import { EyeUnit } from './eye.js';
 import { GazeController } from './gaze.js';
 import { NeckRig } from './neck.js';
+import { syncConnectors } from './connectors.js';
 import { buildInternals } from './internals.js';
+import { IS_MOBILE } from '../../device.js';
+import { connectionReport, fitReport, clearanceReport } from './inspect.js';
 import { ExplodeController } from './explode.js';
 import {
   ceramicMaterial,
@@ -369,13 +372,16 @@ export class RobotScene {
     this.#buildTempleMechanics(this.procHead);
 
     // Unutarnja mehanika (vidi se samo rastavljena).
-    this.internals = buildInternals(M);
+    this.internals = buildInternals(M, { lite: IS_MOBILE });
     this.procHead.add(this.internals.head);
+    // Cijevi hlađenja uz sljepoočnice vide se kroz procjep i kad je glava sklopljena.
+    this.procHead.add(this.internals.temple);
+    if (this.internals.rivets) this.procHead.add(this.internals.rivets);
+    if (this.internals.gyroLight) this.procHead.add(this.internals.gyroLight);
     this.torso.add(this.internals.torso);
     // Svjetlo reaktora je uvijek u sceni (intenzitet 0 dok je sklopljeno): skriveno svjetlo
     // ne ulazi u broj svjetala, pa bi njegovo pojavljivanje rekompajliralo sve materijale.
     this.torso.add(this.internals.coreLight);
-    for (const m of [this.internals.mats.brain, this.internals.mats.pcb]) m.userData.darkEnv = true;
     this.internals.head.visible = false;
     this.internals.torso.visible = false;
 
@@ -390,7 +396,7 @@ export class RobotScene {
       this.eyes.push(eye);
     }
 
-    this.neck = new NeckRig({ root: this.root, head: this.headContent, mats: M });
+    this.neck = new NeckRig({ root: this.root, head: this.headContent, torso: this.torso, mats: M, fluid: this.internals.fluidMat, lite: IS_MOBILE });
     this.#buildExplode();
   }
 
@@ -412,16 +418,26 @@ export class RobotScene {
       name: 'maska',
       obj: P.face,
       window: [0.08, 0.52],
-      to: V(0, 3.2, 3.6),
+      to: V(0, 3.4, 3.0),
       via: V(0, 0.2, 3.4),
-      spin: { axis: V(1, 0, 0), angle: -0.98, pivot: V(0, 9.6, -4.2), start: 0.22 },
+      spin: { axis: V(1, 0, 0), angle: -1.22, pivot: V(0, 9.6, -4.2), start: 0.22 },
     });
     ex.add({ name: 'čeljust', obj: P.jaw, window: [0.12, 0.52], to: V(0, -6.2, 6.6), via: V(0, -0.4, 4.6) });
     ex.add({ name: 'prsa', obj: P.chest, window: [0.04, 0.48], to: V(0, -5.5, 9.5), via: V(0, 0, 5.2) });
     ex.add({ name: 'rame L', obj: P.shoulderL, window: [0.1, 0.5], to: V(-8.5, -1.2, 0.5) });
     ex.add({ name: 'rame D', obj: P.shoulderR, window: [0.1, 0.5], to: V(8.5, -1.2, 0.5) });
-    ex.add({ name: 'kranij L', obj: P.craniumL, window: [0.34, 0.72], to: V(-8.0, 0.6, -2.2), via: V(-4.2, 0, -0.6) });
-    ex.add({ name: 'kranij D', obj: P.craniumR, window: [0.34, 0.72], to: V(8.0, 0.6, -2.2), via: V(4.2, 0, -0.6) });
+    // Polovice kranija: izađu u stranu pa se otvore unatrag oko šarke na zatiljku (kao školjka),
+    // da se unutrašnjost vidi i iz poluprofila.
+    for (const sx of [-1, 1]) {
+      ex.add({
+        name: `kranij ${sx < 0 ? 'L' : 'D'}`,
+        obj: sx < 0 ? P.craniumL : P.craniumR,
+        window: [0.34, 0.72],
+        to: V(sx * 6.6, 0.6, -1.6),
+        via: V(sx * 3.8, 0, -0.4),
+        spin: { axis: V(0, 1, 0), angle: sx * 0.4, pivot: V(sx * 0.8, 0, -15.5), start: 0.3 },
+      });
+    }
     for (const [i, ear] of this.ears.entries()) {
       const sx = i === 0 ? -1 : 1;
       ex.add({ name: `uho ${sx}`, obj: ear, window: [0.46, 0.82], to: V(sx * 3.4, 0, 0) });
@@ -434,7 +450,8 @@ export class RobotScene {
       },
       freq: 2.5,
     });
-    ex.add({ name: 'hladnjak', obj: this.internals.sink, window: [0.55, 0.96], to: V(0, 2.6, 0) });
+    // Hladnjak s ventilatorom se podigne s vodenog bloka (slojevi se razmaknu).
+    ex.add({ name: 'hladnjak', obj: this.internals.radiator, window: [0.55, 0.96], to: V(0, 1.0, 0) });
     ex.add({
       name: 'reaktor',
       window: [0.5, 0.96],
@@ -708,7 +725,7 @@ export class RobotScene {
     // (prvi update ih opet sakrije), pa prvo rastavljanje ne zastane.
     if (this.internals) {
       this.internals.head.visible = this.internals.torso.visible = true;
-      for (const c of this.neck.cables) c.plug.visible = true;
+      for (const c of this.neck.cables) c.visible = true;
     }
     scene.environment = this.darkEnv;
     scene.environmentIntensity = 1;
@@ -756,6 +773,8 @@ export class RobotScene {
     for (const eye of this.eyes) list.push(...eye.emissiveObjects);
     for (const [led] of this.leds) list.push(led);
     list.push(...this.internals.glowObjects);
+    // Tekućina u cijevima i svjetlosni impulsi u optičkim vlaknima.
+    for (const c of [...this.internals.cables, ...this.neck.cables]) if (c.core) list.push(c.core.mesh);
     return list;
   }
 
@@ -930,13 +949,13 @@ export class RobotScene {
     // Unutrašnjost svijetli istom bojom kao oči.
     const I = this.internals;
     const glowK = 1 + 0.25 * pulse;
-    I.stripMaterial.color.copy(color).multiplyScalar(3.2 * glowK);
-    I.reactorRings.forEach((ring, i) => ring.material.color.copy(color).multiplyScalar((3 + i * 2.2) * glowK));
-    I.coreSphere.material.color.copy(color).multiplyScalar(14 * glowK);
+    // Kretanje i strujanje rastu s napretkom rastavljanja (ne s najdaljim dijelom).
+    I.update(dt, { e: THREE.MathUtils.clamp(this.explode.p, 0, 1), color, eyeColor: this.eyeColor, anger: this.anger, pulse, headVisible: I.head.visible });
     I.coreLight.color.copy(color);
     I.coreLight.intensity = 150 * Math.min(1, exploded * 2) * glowK;
     this.M.cage.emissive.copy(color).multiplyScalar(this.seamFlash * 1.8);
     this.neck.update();
+    syncConnectors();
   }
 
   /** Ruke → stanje: pažnja prema prstu, dodir lica, ciljna razina rastavljanja. */
@@ -1060,6 +1079,21 @@ export class RobotScene {
     const show = amount > 0.002 || ex.p > 0.002;
     this.internals.head.visible = show && this.procHead.visible;
     this.internals.torso.visible = show;
+  }
+
+  /** Test: spojenost svih krajeva kabela, cijevi, klipova i kralježnice (cm). */
+  connectionReport() {
+    return connectionReport(this);
+  }
+
+  /** Test: uklapanje unutarnjih dijelova u kavez (cm iznad granice; ≤ 0 je u redu). */
+  fitReport() {
+    return fitReport(this);
+  }
+
+  /** Test: razmaci cijevi od dijelova, drugih cijevi i ljuske (cm). */
+  clearanceReport() {
+    return clearanceReport(this);
   }
 
   /** ORBIT: točka interesa je središte glave (statično — robot stoji mirno). */
