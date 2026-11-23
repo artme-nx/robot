@@ -29,7 +29,7 @@ import { Loader } from './ui/loader.js';
 import { ModeSwitch } from './ui/modeSwitch.js';
 import { Hints } from './ui/hints.js';
 import { CameraNote } from './ui/cameraNote.js';
-import { TouchInput } from './tracking/touchInput.js';
+import { TouchInput, HEAD_RANGE as TOUCH_HEAD_RANGE } from './tracking/touchInput.js';
 import { IS_MOBILE, IN_APP, MOBILE, mobileCameraFov, mobileCameraPosition } from './device.js';
 import { useBakedGeometry } from './geometry/generate.js';
 import { useMobileEnvironment } from './render/environment.js';
@@ -403,6 +403,7 @@ let stereo = false;
 let mouseMode = false;
 let cameraFailed = false;
 let headOverride = null; // za automatske testove (window.__ht.setHead)
+let cameraHeadOverride = null; // test: položaj glave kao da ga javlja kamera (window.__ht.setCameraHead)
 let handOverride = null; // za automatske testove (window.__ht.setHand)
 
 resize();
@@ -545,6 +546,13 @@ function updateOrbitCalibration(now, source, rect) {
   const rest = new THREE.Vector3(rect.cx, rect.cy, REST_DISTANCE);
   if (source !== orbitState.source) {
     if (source === 'miš' || source === 'test' || source === 'dodir') orbit.setNeutral(rest);
+    // Povratak na kameru s drugog izvora (miš, dodir…): lice se kalibrira ispočetka,
+    // inače bi ostao neutralni položaj miša.
+    const camera = (s) => s === 'kamera' || s === 'centar';
+    if (camera(source) && !camera(orbitState.source)) {
+      orbitState.wasTracking = false;
+      orbitState.lostSince = -Infinity;
+    }
     orbitState.source = source;
   }
   if (source === 'kamera' || source === 'centar') {
@@ -574,7 +582,14 @@ function updatePose(now, dt, rect) {
     return 'test';
   }
 
-  if (IS_MOBILE && (cameraFailed || !tracker.ready)) {
+  if (cameraHeadOverride) {
+    // Test: glava kao s kamere (prolazi kroz neutralni položaj i preslikavanje FOLLOW ME).
+    pose.tracked = [...cameraHeadOverride];
+    pose.roll = 0;
+    pose.weight = Math.min(1, pose.weight + dt * 4);
+    hud.setStatus('tracking', 'Tracking your head (test)');
+    source = 'kamera';
+  } else if (IS_MOBILE && (cameraFailed || !tracker.ready)) {
     // Mobitel bez kamere (ili dok se pokreće): povlačenje prstom glumi glavu.
     pose.tracked = [...touch.updateHead(rect, dt)];
     pose.roll = 0;
@@ -616,6 +631,33 @@ function updatePose(now, dt, rect) {
   for (let i = 0; i < 3; i++) pose.eye[i] = rest[i] + (pose.tracked[i] - mobileCenter[i] - rest[i]) * w;
   pose.eye[2] = Math.max(pose.eye[2], 5);
   return source;
+}
+
+// ---------- FOLLOW ME s kamerom = kao miš ----------
+// Kamera javlja stvarni položaj glave, ali robot se okreće kao da ga vodi miš: pomak glave
+// od neutralnog položaja (kalibrira se ~1,4 s nakon što se lice pronađe, kao za ORBIT, pa
+// robot gleda ravno u tebe i kad ne sjediš u sredini i iako je kamera iznad ekrana)
+// preslikava se na raspon pokazivača. Naginjanje ±15 cm (mobitel ±10 cm) = miš od ruba do
+// ruba; dalje meki limit prema rubu miša, pa je najveći kut miša gornja granica. Kut se
+// računa na udaljenosti miša (60 / 35 cm); blenda i dalje dobiva stvarnu udaljenost.
+const CAMERA_LEAN = IS_MOBILE ? { x: 10, y: 7 } : { x: 15, y: 10 };
+const KNEE = 0.85; // linearno do 85 % raspona, zatim meko prema rubu (nikad preko)
+const softKnee = (u) => {
+  const a = Math.abs(u);
+  return a <= KNEE ? u : Math.sign(u) * (KNEE + (1 - KNEE) * Math.tanh((a - KNEE) / (1 - KNEE)));
+};
+const followEye = [0, 0, 0];
+function followMeEye(rect) {
+  const n = orbit.neutral;
+  const ok = n && !orbit.calibrating;
+  const w = smoothstep(pose.weight);
+  // Rub "miša": računalo 0,75 širine/visine prozora (MouseHead), mobitel raspon povlačenja (TouchInput).
+  const edgeX = IS_MOBILE ? TOUCH_HEAD_RANGE[0] : rect.width * 0.75;
+  const edgeY = IS_MOBILE ? TOUCH_HEAD_RANGE[1] : rect.height * 0.75;
+  followEye[0] = rect.cx + edgeX * softKnee(ok ? (pose.tracked[0] - n.x) / CAMERA_LEAN.x : 0) * w;
+  followEye[1] = rect.cy + edgeY * softKnee(ok ? (pose.tracked[1] - n.y) / CAMERA_LEAN.y : 0) * w;
+  followEye[2] = REST_DISTANCE;
+  return followEye;
 }
 
 const mobileCenter = [0, 0, 0]; // računalo: uvijek nula
@@ -794,8 +836,11 @@ function frame() {
     override: handOverride,
   });
 
+  // FOLLOW ME s kamerom: pogled kao s mišem (vidi followMeEye); miš i dodir idu izravno.
+  const cameraFollow = mode === 'fixed' && (source === 'kamera' || source === 'centar');
   robot.update(t, dt, {
-    eye: mode === 'orbit' ? camMono.position.toArray() : pose.eye,
+    eye: mode === 'orbit' ? camMono.position.toArray() : cameraFollow ? followMeEye(rect) : pose.eye,
+    viewerDistance: cameraFollow ? pose.eye[2] : undefined,
     rect,
     cameraMode: mode,
     gazeMode: gazeModes[mode],
@@ -877,6 +922,8 @@ function setHandOverride(o) {
 // Mali API za automatske testove i snimanje (Playwright): window.__ht
 window.__ht = {
   setHead: (v) => (headOverride = v ? [...v] : null),
+  /** Test: položaj glave [x, y, z] u cm (prostor ekrana) kao da ga javlja kamera; null vraća pravu kameru. */
+  setCameraHead: (v) => (cameraHeadOverride = v ? [...v] : null),
   /**
    * Ruka bez kamere: { tip:[x,y] (NDC), r (udaljenost ruke / glave, 0.62 = neutralno),
    * gesture: 'point'|'pinch'|'open'|'fist'|'none', spread, two?: {rect} }; null vraća kameru/miš.

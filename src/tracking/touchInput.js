@@ -12,7 +12,7 @@ const FACE_LOG_R = Math.log(0.3); // prst "na ekranu" = puni doseg (vrh prsta na
 const DRAG_PX = 10; // pomak koji dodir pretvara u povlačenje
 const PRESS_MS = 260; // držanje bez pomaka = prst na ekranu
 const TAP_MS = 380; // koliko dugo traje "prst" nakon kratkog dodira
-const HEAD_RANGE = [18, 10]; // cm: puni raspon glave pri povlačenju (lijevo-desno, gore-dolje)
+export const HEAD_RANGE = [18, 10]; // cm: puni raspon glave pri povlačenju (lijevo-desno, gore-dolje)
 const PINCH_OPEN = 1.08; // omjer razmaka prstiju: iznad = širenje
 const PINCH_FULL = 2.0; // omjer za potpuno rastavljanje
 const PINCH_CLOSE = 0.86; // ispod = skupljanje (šaka)

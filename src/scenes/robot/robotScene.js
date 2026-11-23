@@ -816,7 +816,8 @@ export class RobotScene {
 
     // Ekvivalent udaljenosti gledatelja od ekrana (za blendu), neovisno o načinu kamere.
     const headWorld = this.root.localToWorld(new THREE.Vector3(0, 0, 0));
-    const viewerZ = viewerWorld.distanceTo(headWorld) - Math.abs(ROBOT.z) * (this.displayScale ?? 1);
+    // FOLLOW ME s kamerom: pogled ide na "položaj miša", a blenda prati stvarnu udaljenost.
+    const viewerZ = ctx.viewerDistance ?? viewerWorld.distanceTo(headWorld) - Math.abs(ROBOT.z) * (this.displayScale ?? 1);
     const g = this.gaze.update(dt, viewerZ, headGoal);
     this.lastGaze = g;
     const frontAngle = Math.atan2(Math.hypot(viewerLocal.x, viewerLocal.y), viewerLocal.z);

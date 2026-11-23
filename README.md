@@ -167,11 +167,17 @@ Gumb u dnu ekrana (i tipka `G`) prebacuje dva načina; pri otvaranju stranice uv
 sredini na ~60 cm) i položaj glave ne utječe ni na kameru ni na projekciju — poprsje i ramena stoje na istom
 mjestu na ekranu, robot ne mijenja veličinu kad se približiš ili udaljiš (na to reagira samo blenda), a za tobom
 se okreću oči, glava i vrat.
-Okret glave je namjerno pojačan da reakcija bude jasna na prvi pogled: pomak od **20 cm u stranu** (na ~60 cm
-od ekrana, oko 9° gledano iz robotove glave) daje **~40° okreta glave** (pojačanje ×5,5 s mekim limitom
-oko 55°; gore-dolje ×2,2, do 22°). Oči stignu prve i gledaju točno u tebe, a glava i vrat slijede s kašnjenjem
-i inercijom (iste opruge kao prije), pa se oči na kraju malo vrate prema tebi. Prema prstu se glava okreće
-bez pojačanja.
+Okret glave je namjerno pojačan da reakcija bude jasna na prvi pogled. **Mišem** (i povlačenjem prsta na
+mobitelu) pokazivač na rubu ekrana daje ~41° okreta glave (mobitel ~48°), na pola puta ~25° (mobitel ~33°).
+Oči stignu prve, a glava i vrat slijede s kašnjenjem i inercijom; poprsje stoji.
+
+**S kamerom** izgleda isto kao s mišem: pomak glave od neutralnog položaja preslikava se na raspon pokazivača
+— prirodno naginjanje **±15 cm** (na 50–70 cm od ekrana; mobitel ±10 cm) daje isti raspon kutova kao miš od
+ruba do ruba, a dalje je meki limit na najvećem kutu miša. Neutralni položaj kalibrira se sam ~1,4 s nakon što
+se lice pronađe (kao za ORBIT, i nakon svakog povratka s miša/dodira na kameru), pa robot gleda ravno u tebe i
+kad ne sjediš u sredini i iako je kamera iznad ekrana; `N` ga postavlja ručno. Blenda i dalje prati stvarnu
+udaljenost. (Provjereno sintetičkim licem kroz `HeadTracker`: procjena bočnog pomaka ne ovisi o FOV-u kamere
+i ne preuveličava pomak — kad se glava pri naginjanju okrene prema ekranu, javlja ~5 % manje.)
 
 **LOOK AROUND** = ORBIT kamera + pogled 1: ti kružiš oko robota, a on stoji mirno (opis ORBIT-a ispod).
 
@@ -373,7 +379,8 @@ iz `window.screenX/Y`, pa je "prozor u svijet" upravo onaj dio ekrana koji prozo
 Za automatske testove (Playwright) stranica izlaže `window.__ht`: `setHead([x, y, z])` (položaj glave u cm
 od centra prozora, `null` vraća praćenje), `setQuality('high'|'low')`, `setStereo(bool)`,
 `setCameraMode('orbit'|'window'|'fixed')`, `setOrbit({ az, el, zoom })` (orbita bez glave; `null` vraća upravljanje),
-`setViewMode('follow'|'look')` (FOLLOW ME / LOOK AROUND, kao gumb), `setGazeMode(1|2|3)` (pogled za trenutni
+`setViewMode('follow'|'look')` (FOLLOW ME / LOOK AROUND, kao gumb), `setCameraHead([x, y, z])` (položaj glave kao s kamere — prolazi kroz neutralni položaj i
+preslikavanje FOLLOW ME; `null` vraća pravu kameru), `setGazeMode(1|2|3)` (pogled za trenutni
 način kamere), `blink()` (okini zatvarač odmah), `hints` (upute: `isDone(id)`, `items`), `benchmark(n)` (ms po
 frameu bez vsynca), `robot` (objekt scene; `robot.wake()` ponovno budi oči) i `state()` (`phase`: `loading` →
 `compiling` → `live`; `ready`: robot je na ekranu; `viewMode`, `cameraMode`, `gazeMode`, `headYawDeg` — okret
