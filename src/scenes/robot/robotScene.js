@@ -34,7 +34,7 @@ const ANGRY = new THREE.Color('#ff2a12');
 // Položaj robota: središte između očiju (cm, prostor prozora) i mjerilo.
 const ROBOT = { y: 3.6, z: -64, scale: 0.86 };
 const DEG = Math.PI / 180;
-// FOLLOW ME (WINDOW + pogled 3): glava se okreće za gledateljem pojačano — pomak od
+// FOLLOW ME (fiksna ili WINDOW kamera + pogled 3): glava se okreće za gledateljem pojačano — pomak od
 // ~20 cm u stranu (na ~60 cm od ekrana, ~9° iz robotove glave) daje ~40° okreta glave.
 // Meki limit (tanh) da glava ne ode u profil; oči i dalje gledaju točno u gledatelja.
 const FOLLOW_ME = { yawGain: 5.5, pitchGain: 2.2, maxYaw: 55 * DEG, maxPitch: 22 * DEG };
@@ -787,10 +787,10 @@ export class RobotScene {
     const yaw = Math.atan2(viewerLocal.x, viewerLocal.z);
     const pitch = Math.atan2(viewerLocal.y, Math.hypot(viewerLocal.x, viewerLocal.z));
     // Ponašanje pogleda: 1 = oči prate do ±25° od fronte, zatim gledaju naprijed (LOOK AROUND);
-    // 2 = oči uvijek prate (do granice rotacije oka); 3 = glava i oči prate (FOLLOW ME u WINDOW).
+    // 2 = oči uvijek prate (do granice rotacije oka); 3 = glava i oči prate (FOLLOW ME).
     const gazeMode = ctx.gazeMode ?? 3;
     const followHead = gazeMode === 3;
-    const followMe = followHead && ctx.cameraMode === 'window';
+    const followMe = followHead && ctx.cameraMode !== 'orbit';
 
     // Ruke: kažiprst privlači pogled, dodir lica plaši/ljuti, dlan rastavlja, šaka sklapa.
     this.#updateHands(dt, ctx.hand);

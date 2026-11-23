@@ -18,7 +18,7 @@ kadar bez stiskanja, a bez kamere se njime upravlja dodirom — vidi [Mobitel](#
 
 **Živo:** https://artme-nx.github.io/robot/
 
-| Sučelje: FOLLOW ME, prva uputa | FOLLOW ME — glava 15 cm udesno | LOOK AROUND — kamera kruži |
+| Sučelje: FOLLOW ME, prva uputa | FOLLOW ME — glava 15 cm udesno, poprsje stoji | LOOK AROUND — kamera kruži |
 | --- | --- | --- |
 | ![Sučelje](docs/screenshots/robot-sucelje.jpg) | ![FOLLOW ME](docs/screenshots/robot-follow-me.jpg) | ![LOOK AROUND](docs/screenshots/robot-look-around.jpg) |
 
@@ -131,7 +131,7 @@ npm run preview   # lokalni pregled builda
 
 | Tipka | Akcija |
 | --- | --- |
-| `M` | način kamere: **ORBIT** ↔ **WINDOW** (kratko se prikaže u kutu; gumb u dnu prati isto) |
+| `M` | ručni izbor kamere: **ORBIT** ↔ **WINDOW** (kratko se prikaže u kutu) |
 | `N` | ORBIT: "ovo je centar" — trenutni položaj glave postaje neutralni |
 | `T` | ORBIT panel: pojačanja, kutovi, zoom, mrtva zona, krutost opruge (spremaju se) |
 | `G` | **LOOK AROUND** ↔ **FOLLOW ME** (isto kao gumb u dnu ekrana) |
@@ -163,7 +163,10 @@ Bez kamere (odbijena dozvola, nema uređaja) miš automatski glumi glavu, a ruke
 
 Gumb u dnu ekrana (i tipka `G`) prebacuje dva načina; pri otvaranju stranice uvijek je **FOLLOW ME**.
 
-**FOLLOW ME** = WINDOW kamera + pogled 3: kamera miruje (ekran je prozor), a robot okreće glavu i oči za tobom.
+**FOLLOW ME** = fiksna kamera + pogled 3: kamera stoji u neutralnom kadru (isti kadar koji WINDOW daje za glavu u
+sredini na ~60 cm) i položaj glave ne utječe ni na kameru ni na projekciju — poprsje i ramena stoje na istom
+mjestu na ekranu, robot ne mijenja veličinu kad se približiš ili udaljiš (na to reagira samo blenda), a za tobom
+se okreću oči, glava i vrat.
 Okret glave je namjerno pojačan da reakcija bude jasna na prvi pogled: pomak od **20 cm u stranu** (na ~60 cm
 od ekrana, oko 9° gledano iz robotove glave) daje **~40° okreta glave** (pojačanje ×5,5 s mekim limitom
 oko 55°; gore-dolje ×2,2, do 22°). Oči stignu prve i gledaju točno u tebe, a glava i vrat slijede s kašnjenjem
@@ -172,8 +175,9 @@ bez pojačanja.
 
 **LOOK AROUND** = ORBIT kamera + pogled 1: ti kružiš oko robota, a on stoji mirno (opis ORBIT-a ispod).
 
-`M` i dalje prebacuje samo kameru (ORBIT ↔ WINDOW); kako svaki način kamere ima svoj pogled, `M` u praksi
-prebacuje isti par, a gumb pokazuje gdje si.
+`M` i dalje ručno bira kameru: ORBIT ili WINDOW (fizički točna off-axis projekcija s tvog oka, u kojoj se
+cijeli prizor pomiče s glavom kao kroz prozor). WINDOW nije ni jedan od dva gumba, pa tada nijedan nije
+označen; `G` ili gumb vraćaju u FOLLOW ME / LOOK AROUND.
 
 ### ORBIT
 
@@ -357,7 +361,7 @@ iz `window.screenX/Y`, pa je "prozor u svijet" upravo onaj dio ekrana koji prozo
 
 Za automatske testove (Playwright) stranica izlaže `window.__ht`: `setHead([x, y, z])` (položaj glave u cm
 od centra prozora, `null` vraća praćenje), `setQuality('high'|'low')`, `setStereo(bool)`,
-`setCameraMode('orbit'|'window')`, `setOrbit({ az, el, zoom })` (orbita bez glave; `null` vraća upravljanje),
+`setCameraMode('orbit'|'window'|'fixed')`, `setOrbit({ az, el, zoom })` (orbita bez glave; `null` vraća upravljanje),
 `setViewMode('follow'|'look')` (FOLLOW ME / LOOK AROUND, kao gumb), `setGazeMode(1|2|3)` (pogled za trenutni
 način kamere), `blink()` (okini zatvarač odmah), `hints` (upute: `isDone(id)`, `items`), `benchmark(n)` (ms po
 frameu bez vsynca), `robot` (objekt scene; `robot.wake()` ponovno budi oči) i `state()` (`phase`: `loading` →

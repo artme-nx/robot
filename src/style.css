@@ -401,6 +401,7 @@ kbd + kbd { margin-left: 0; }
   transition: transform 0.32s cubic-bezier(0.3, 0.7, 0.2, 1);
 }
 .mode-switch[data-mode='follow']::before { transform: translateX(100%); }
+.mode-switch[data-mode='window']::before { opacity: 0; } /* M → WINDOW: nijedan od dva gumba */
 .mode-switch button {
   position: relative;
   display: inline-flex;

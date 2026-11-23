@@ -54,17 +54,19 @@ if (IS_MOBILE) {
 
 // Dva načina (gumb u dnu ekrana, tipka G):
 //   LOOK AROUND — ORBIT kamera, ti kružiš oko robota; on stoji mirno, oči prate do ±25° (pogled 1);
-//   FOLLOW ME   — WINDOW kamera miruje, robot okreće glavu i oči za tobom (pogled 3, pojačan okret).
-// Svaki način kamere ima svoj pogled, pa i M (ORBIT ↔ WINDOW) prebacuje isti par.
+//   FOLLOW ME   — FIKSNA kamera u neutralnom kadru (glava ne utječe ni na kameru ni na projekciju):
+//                 poprsje stoji, a oči, glava i vrat okreću se za tobom (pogled 3, pojačan okret).
+// M ručno bira ORBIT ili WINDOW (fizički točna projekcija s oka; nije ni jedan od dva gumba).
 // Pri otvaranju stranice uvijek je FOLLOW ME.
 const VIEW_MODES = {
   look: { camera: 'orbit', gaze: 1, toast: 'Look around — move your head to circle the robot' },
-  follow: { camera: 'window', gaze: 3, toast: 'Follow me — the robot turns to follow you' },
+  follow: { camera: 'fixed', gaze: 3, toast: 'Follow me — the robot turns to follow you' },
 };
 let cameraMode = VIEW_MODES.follow.camera;
 // Ponašanje pogleda po načinu kamere: 1 = prati do ±25°, 2 = oči uvijek prate, 3 = glava i oči prate.
-const gazeModes = { orbit: VIEW_MODES.look.gaze, window: VIEW_MODES.follow.gaze };
-const viewModeOf = (camera) => (camera === 'orbit' ? 'look' : 'follow');
+const gazeModes = { orbit: VIEW_MODES.look.gaze, fixed: VIEW_MODES.follow.gaze, window: 3 };
+const viewModeOf = (camera) => (camera === 'orbit' ? 'look' : camera === 'fixed' ? 'follow' : 'window');
+const CAMERA_BADGE = { orbit: 'ORBIT', window: 'WINDOW', fixed: 'FOLLOW ME' };
 
 const QUALITY_KEY = 'robot:quality';
 let quality = 'high';
@@ -338,7 +340,7 @@ function setCameraMode(mode, { badge = true } = {}) {
   cameraMode = mode;
   if (mode === 'orbit' && !orbit.neutral) orbit.recalibrate(performance.now(), 1.0);
   modeSwitch.set(viewModeOf(mode));
-  if (badge) hud.badge(mode === 'orbit' ? 'ORBIT' : 'WINDOW');
+  if (badge) hud.badge(CAMERA_BADGE[mode]);
 }
 
 /** LOOK AROUND ili FOLLOW ME (gumb, tipka G): kamera + pripadni pogled robota. */
@@ -702,13 +704,18 @@ function frame() {
     pa.set(rect.x0, rect.y0, 0);
     pb.set(rect.x1, rect.y0, 0);
     pc.set(rect.x0, rect.y1, 0);
-    if (settings.eye === 'left') mono.sub(half);
-    if (settings.eye === 'right') mono.add(half);
+    // FOLLOW ME: kamera stoji u neutralnom kadru (oko na mirovanju u sredini), pa se ni
+    // robot ni njegova veličina ne mijenjaju s glavom; WINDOW: kamera je na stvarnom oku.
+    const camEye = mode === 'fixed' ? neutralEye.set(rect.cx, rect.cy, REST_DISTANCE) : eyeC;
+    if (mode === 'fixed') mono.copy(camEye);
+    else if (settings.eye === 'left') mono.sub(half);
+    else if (settings.eye === 'right') mono.add(half);
     applyOffAxis(camMono, pa, pb, pc, mono, NEAR, FAR);
     if (stereo) {
       const k = settings.stereoStrength;
-      eyeL.copy(eyeC).addScaledVector(half, -k);
-      eyeR.copy(eyeC).addScaledVector(half, k);
+      if (mode === 'fixed') half.set(settings.ipd / 2, 0, 0);
+      eyeL.copy(camEye).addScaledVector(half, -k);
+      eyeR.copy(camEye).addScaledVector(half, k);
       applyOffAxis(camLeft, pa, pb, pc, eyeL, NEAR, FAR);
       applyOffAxis(camRight, pa, pb, pc, eyeR, NEAR, FAR);
     }
@@ -768,10 +775,10 @@ function frame() {
   const orbitInfo =
     mode === 'orbit'
       ? `ORBIT az ${orbit.az.toFixed(1)}° el ${(orbit.effectiveEl ?? orbit.el).toFixed(1)}° zoom ${(1 / orbit.zoom).toFixed(2)}×${orbit.calibrating ? ' · kalibriram' : ''}`
-      : 'WINDOW';
+      : CAMERA_BADGE[mode];
   debug.draw({ tracker, hands, hand, vision, source, eye: pose.eye, rect, stereo, sceneName: robot.name, quality: `${quality} ${renderer.getPixelRatio().toFixed(2)}×`, orbitInfo });
   panel.showMeasurement(pose.eye, source);
-  orbitPanel.showState(mode === 'orbit' ? orbitInfo : 'Robot je u WINDOW načinu (M za orbit).');
+  orbitPanel.showState(mode === 'orbit' ? orbitInfo : mode === 'fixed' ? 'FOLLOW ME: kamera je fiksna (G za LOOK AROUND, M za ORBIT).' : 'Robot je u WINDOW načinu (M za orbit).');
 }
 renderer.setAnimationLoop(frame);
 
