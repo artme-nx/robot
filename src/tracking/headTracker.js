@@ -176,8 +176,10 @@ export class HeadTracker {
     const yCam = ((my - H / 2) * z) / f; // dolje u slici kamere
 
     // Slika kamere nije zrcaljena: korisnikovo "desno" je lijevo u slici.
-    const x = -xCam;
-    const y = s.screenHeight / 2 + s.cameraOffset - yCam;
+    // Kamera je iznad sredine gornjeg ruba (računalo); na mobitelu main.js postavlja
+    // cameraX/cameraY prema orijentaciji (u položenom je kamera sa strane).
+    const x = (s.cameraX ?? 0) - xCam;
+    const y = (s.cameraY ?? s.screenHeight / 2 + s.cameraOffset) - yCam;
 
     const t = nowMs / 1000;
     if (this.held) {

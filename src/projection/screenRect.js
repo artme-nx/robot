@@ -3,6 +3,13 @@
 // pa je "prozor u svijet" točno onaj dio ekrana koji prozor zauzima.
 
 export function getCanvasRect(settings) {
+  // Mobitel: canvas je cijeli vidljivi prozor, a cm se računaju iz CSS piksela
+  // (stvarna veličina ekrana uređaja; vidi device.js). Računalo ide dalje kao prije.
+  if (settings.mobilePxPerCm) {
+    const w = window.innerWidth / settings.mobilePxPerCm;
+    const h = window.innerHeight / settings.mobilePxPerCm;
+    return { x0: -w / 2, x1: w / 2, y0: -h / 2, y1: h / 2, width: w, height: h, cx: 0, cy: 0 };
+  }
   const W = settings.screenWidth;
   const H = settings.screenHeight;
   const full = { x0: -W / 2, x1: W / 2, y0: -H / 2, y1: H / 2 };

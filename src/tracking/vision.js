@@ -177,7 +177,13 @@ export class VisionSource {
   }
 
   start() {
-    this.startPromise ??= this.#start();
+    // Ako pokretanje ne uspije (odbijena dozvola…), sljedeći poziv pokušava ponovno.
+    this.startPromise ??= this.#start().catch((err) => {
+      this.startPromise = null;
+      this.streaming = false;
+      this.video.srcObject?.getTracks?.().forEach((t) => t.stop());
+      throw err;
+    });
     return this.startPromise;
   }
 
@@ -189,6 +195,7 @@ export class VisionSource {
     });
     this.video.srcObject = stream;
     await this.video.play();
+    this.streaming = true; // kamera daje sliku (detektori se možda još učitavaju)
     // Novi frame kamere: requestVideoFrameCallback (currentTime živog streama raste
     // kontinuirano, pa ne kaže je li stigao novi frame).
     if (this.video.requestVideoFrameCallback) {

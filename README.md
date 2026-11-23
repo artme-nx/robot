@@ -13,6 +13,9 @@ za tobom; **LOOK AROUND** — ti kružiš oko robota, a on stoji mirno. Sučelje
 dolaze s Instagrama): kratke upute koje se izmjenjuju i nestaju kad gestu prvi put napraviš, i potpis
 *Artificial Media* s poveznicom na [Instagram](https://instagram.com/artificial_media_studio).
 
+Radi i na **mobitelu** (posjetitelji dolaze s Instagrama, često kroz njegov ugrađeni preglednik): robot ispuni
+kadar bez stiskanja, a bez kamere se njime upravlja dodirom — vidi [Mobitel](#mobitel).
+
 **Živo:** https://artme-nx.github.io/robot/
 
 | Sučelje: FOLLOW ME, prva uputa | FOLLOW ME — glava 15 cm udesno | LOOK AROUND — kamera kruži |
@@ -26,6 +29,14 @@ dolaze s Instagrama): kratke upute koje se izmjenjuju i nestaju kad gestu prvi p
 | Robot | Robot prati prst |
 | --- | --- |
 | ![Robot](docs/screenshots/robot.jpg) | ![Robot prati prst](docs/screenshots/robot-prati-prst.jpg) |
+
+| iPhone, bez kamere | Android, s kamerom | Android — rastavljen dodirom |
+| --- | --- | --- |
+| ![iPhone bez kamere](docs/screenshots/mobitel-iphone-bez-kamere.jpg) | ![Android s kamerom](docs/screenshots/mobitel-android-kamera.jpg) | ![Rastavljen dodirom](docs/screenshots/mobitel-android-rastavljen.jpg) |
+
+| iPhone položeno | Android položeno |
+| --- | --- |
+| ![iPhone položeno](docs/screenshots/mobitel-iphone-polozeno.jpg) | ![Android položeno](docs/screenshots/mobitel-android-polozeno.jpg) |
 
 | Ljutnja (prst predugo blizu) | Rastavljen robot (otvoren dlan) | Rastavljen — s boka |
 | --- | --- | --- |
@@ -214,6 +225,36 @@ oči prate (u WINDOW načinu s pojačanim okretom).
 Studio je proširen da i bok izgleda kao front: robot stoji u studiju s cikloramom, a softboxovi na stalcima
 su na mjestima stvarnih svjetala (izvan putanje kamere).
 
+## Mobitel
+
+Mobitel/tablet se prepoznaje po pregledniku (iPhone, Android, Instagram/Facebook preglednik) ili po dodiru kao
+glavnom pokazivaču bez hovera (iPad). Sve ispod vrijedi **samo na mobitelu** (`src/device.js`, klasa
+`is-mobile` na `<html>`); na računalu prikaz, kalibracija i ponašanje ostaju kao prije.
+
+- **Mjere ekrana:** umjesto MacBook Aira stvarna veličina prozora iz CSS piksela (~150 CSS px po inču za
+  mobitel, ~132 za tablet), pa robot nije stisnut ni u uspravnom ni u položenom položaju. Prednja kamera:
+  ~70° vidnog polja po duljoj strani slike (u uspravnoj slici se računa uži vodoravni kut), ~1 cm iznad
+  gornjeg ruba (uspravno) ili sa strane (položeno, prema `screen.orientation`). Mobitel se drži bliže:
+  mirovanje je na 35 cm umjesto 60. Jer položaj kamere i držanje mobitela nisu poznati točno, "ravno ispred"
+  je tamo gdje je lice bilo kad je pronađeno (isti neutralni položaj kao za ORBIT, glatko).
+- **Kadar:** mjerilo robota prati visinu prozora kao na računalu (bez donje granice); u položenom položaju
+  ×0,7, da glava i tamo zauzme oko pola visine kadra.
+- **Kvaliteta:** uvijek kreće s `low` efektima i pixel ratio 1; dinamička rezolucija ga diže do 1,5 kad uređaj
+  može, a spušta do 0,6 kad ne može. Proračun prati stvarni ritam zaslona (u štednji baterije preglednik crta
+  na 30 Hz), a kad ni najniža rezolucija ne drži 60 fps (35–55 fps, trzanje), prelazi na stabilnih 30 fps.
+- **Dodir (bez kamere, ili dok se kamera pokreće):** povlačenje jednim prstom glumi glavu (cijela širina
+  ekrana ≈ ±18 cm), kratki dodir je prst koji dotakne to mjesto (lice → trzaj), držanje prsta na licu ~2 s →
+  ljutnja, širenje dva prsta rastavlja (količina prati širenje), skupljanje sklapa. Dodir i dva prsta rade i
+  kad kamera radi (tada povlačenje vodi prst, a ne glavu).
+- **Upute** bez kamere: *Drag to move around*, *Tap its face*, *Spread two fingers* i, dok je robot rastavljen,
+  *Pinch to put it back*; kad kamera proradi, prelaze na upute za kameru.
+- **Bez kamere** (odbijena, nema je, ili se ne javi 8 s — čest slučaj u Instagramovom pregledniku): mala poruka
+  *With your camera, the robot follows your face.* s gumbom **Try again**; u Instagramovom/Facebookovom
+  pregledniku i savjet da se stranica otvori u Safariju ili Chromeu.
+- **Sučelje za prst:** gumb načina 48 px visok, *Try again* i potpis s dodirnom površinom od 44 px. Uspravno:
+  status i potpis gore, gumb i uputa dolje; položeno: gumb lijevo dolje, uputa desno dolje, robot u sredini.
+  Ništa od toga ne prekriva robotovu glavu. Stranica se ne zumira i ne pomiče prstima.
+
 ## Kalibracija
 
 Efekt je uvjerljiv samo ako program zna **stvarne fizičke mjere**. Pritisni `C`:
@@ -231,7 +272,8 @@ Efekt je uvjerljiv samo ako program zna **stvarne fizičke mjere**. Pritisni `C`
    slika; veća *beta* = manje kašnjenja kod brzih pokreta.
 6. **Jačina stereo efekta** — skalira razmak lijeve/desne kamere u anaglif načinu.
 
-Postavke se spremaju u `localStorage` preglednika.
+Postavke se spremaju u `localStorage` preglednika. Na mobitelu se mjere ekrana i kamere ne uzimaju iz panela,
+nego iz uređaja (vidi [Mobitel](#mobitel)).
 
 Najtočnije je u **fullscreenu** (`F`). U prozoru se položaj prozora na ekranu procjenjuje
 iz `window.screenX/Y`, pa je "prozor u svijet" upravo onaj dio ekrana koji prozor zauzima.
@@ -286,8 +328,10 @@ iz `window.screenX/Y`, pa je "prozor u svijet" upravo onaj dio ekrana koji prozo
   okolina iz HDRI-ja, materijali i tekst u prstenu objektiva.
 - **Geometrija** (`src/geometry/`): SDF primitive, marching cubes s narrow-band blokovima, worker s
   meshoptimizer simplifikacijom; modeli glave i poprsja robota.
-- **Sučelje** (`src/ui/`): ekran za učitavanje, gumb načina (`modeSwitch.js`), upute (`hints.js`), HUD, debug
-  overlay, kalibracijski i ORBIT panel, ispuštanje modela.
+- **Sučelje** (`src/ui/`): ekran za učitavanje, gumb načina (`modeSwitch.js`), upute (`hints.js`), poruka bez
+  kamere (`cameraNote.js`), HUD, debug overlay, kalibracijski i ORBIT panel, ispuštanje modela.
+- **Mobitel** (`src/device.js`, `src/tracking/touchInput.js`): prepoznavanje uređaja, mjere ekrana i kamere,
+  dodir koji glumi glavu i ruku (isti oblik traga kao miš/kamera, pa ga robot ne razlikuje).
 
 ### Praćenje ruku
 
@@ -318,7 +362,9 @@ od centra prozora, `null` vraća praćenje), `setQuality('high'|'low')`, `setSte
 način kamere), `blink()` (okini zatvarač odmah), `hints` (upute: `isDone(id)`, `items`), `benchmark(n)` (ms po
 frameu bez vsynca), `robot` (objekt scene; `robot.wake()` ponovno budi oči) i `state()` (`phase`: `loading` →
 `compiling` → `live`; `ready`: robot je na ekranu; `viewMode`, `cameraMode`, `gazeMode`, `headYawDeg` — okret
-glave u stupnjevima, `cross` — koliko su oči prekrižene, 0–1).
+glave u stupnjevima, `cross` — koliko su oči prekrižene, 0–1; `mobile`, `halfRate` — 30 fps način,
+`cameraFailed`, `cameraNote`). Za mobilne testove: `camera` (render kamera, za projekciju točaka na ekran),
+`touch` (stanje dodira) i `setFrameCost(ms)` (umjetni trošak framea — simulacija slabog uređaja).
 Ruke: `setHand({ tip: [x, y], r, gesture, spread, frame })` (NDC vrha prsta, `r` = udaljenost ruke / udaljenost
 glave, 0,62 je neutralno; `frame: [x0, y0, x1, y1]` = okvir od dvije ruke u NDC; `null` vraća kameru/miš),
 `tap([x, y])`, `markers(bool)` i `hand()` (trenutno stanje).

@@ -28,10 +28,13 @@ import { Hud } from './ui/hud.js';
 import { Loader } from './ui/loader.js';
 import { ModeSwitch } from './ui/modeSwitch.js';
 import { Hints } from './ui/hints.js';
+import { CameraNote } from './ui/cameraNote.js';
+import { TouchInput } from './tracking/touchInput.js';
+import { IS_MOBILE, IN_APP, MOBILE, mobileCameraFov, mobileCameraPosition } from './device.js';
 import { setupDropzone } from './ui/dropzone.js';
 import './style.css';
 
-const REST_DISTANCE = 60; // cm — kamo se pogled vraća kad se lice izgubi
+const REST_DISTANCE = IS_MOBILE ? MOBILE.restDistance : 60; // cm — kamo se pogled vraća kad se lice izgubi
 const NEAR = 0.5;
 const FAR = 2000;
 // Robot se prvo crta ispod ekrana za učitavanje: prvi frameovi kompajliraju shadere
@@ -42,6 +45,12 @@ const REVEAL = { stableFrames: 4, stableFrameMs: 25, maxWaitMs: 900 };
 const settings = loadSettings();
 const orbitSettings = loadOrbitSettings();
 installPCSS();
+if (IS_MOBILE) {
+  // Mobitel: stvarna veličina prozora iz CSS piksela umjesto mjera MacBook Aira, a FOV i
+  // položaj prednje kamere prate orijentaciju (postavlja se svaki frame). Računalo: kao prije.
+  settings.mobilePxPerCm = MOBILE.pxPerCm;
+  document.documentElement.classList.add('is-mobile');
+}
 
 // Dva načina (gumb u dnu ekrana, tipka G):
 //   LOOK AROUND — ORBIT kamera, ti kružiš oko robota; on stoji mirno, oči prate do ±25° (pogled 1);
@@ -64,6 +73,10 @@ try {
 } catch {
   /* bez pohrane */
 }
+// Mobitel: uvijek kreće s low efektima; render kreće s pixel ratio 1, a dinamička
+// rezolucija ga diže do 1,5 kad uređaj može (ili spušta do 0,6 kad ne može).
+const MOBILE_PIXELS = { start: 1, min: 0.6, max: 1.5 };
+if (IS_MOBILE) quality = 'low';
 
 // ---------- Renderer ----------
 const canvas = document.getElementById('view');
@@ -114,8 +127,8 @@ const adaptive = { ratio: null, frames: [], lastChange: 0, lastProbe: 0 };
 function targetPixelRatio() {
   const device = forcedDpr || window.devicePixelRatio;
   const q = QUALITY[quality];
-  const cap = Math.min(device, q.pixelRatio);
-  if (adaptive.ratio === null) adaptive.ratio = cap;
+  const cap = IS_MOBILE ? Math.min(device, MOBILE_PIXELS.max) : Math.min(device, q.pixelRatio);
+  if (adaptive.ratio === null) adaptive.ratio = IS_MOBILE ? Math.min(cap, MOBILE_PIXELS.start) : cap;
   adaptive.ratio = Math.min(cap, Math.max(Math.min(minRatio(), cap), adaptive.ratio));
   return adaptive.ratio;
 }
@@ -123,6 +136,7 @@ function targetPixelRatio() {
 // U anaglifu se cijeli pipeline crta dvaput, pa smije niže.
 function minRatio() {
   const q = QUALITY[quality];
+  if (IS_MOBILE) return MOBILE_PIXELS.min;
   return stereo ? Math.min(q.minPixelRatio, 0.9) : q.minPixelRatio;
 }
 
@@ -131,6 +145,7 @@ function applyPixelRatio() {
 }
 
 function adaptResolution(now, frameMs) {
+  if (IS_MOBILE) return adaptResolutionMobile(now, frameMs);
   if (phase === 'loading' || forcedDpr) return;
   const f = adaptive.frames;
   f.push(frameMs);
@@ -152,6 +167,45 @@ function adaptResolution(now, frameMs) {
     adaptive.lastProbe = now;
   }
   next = Math.min(cap, Math.max(Math.min(minRatio(), cap), next));
+  if (next !== adaptive.ratio) {
+    adaptive.ratio = next;
+    adaptive.lastChange = now;
+    adaptive.frames.length = 0;
+    resize();
+  }
+}
+
+// Mobitel: isti princip, ali proračun frameova prati stvarni ritam zaslona (preglednik u
+// štednji baterije crta na 30 Hz), a kad ni najniža rezolucija ne drži 60 fps, prelazi na
+// stabilnih 30 fps (crta svaki drugi frame) umjesto trzanja između 35 i 55 fps.
+let halfRate = false;
+let frameTick = 0;
+function adaptResolutionMobile(now, frameMs) {
+  if (phase === 'loading' || forcedDpr) return;
+  const f = adaptive.frames;
+  f.push(frameMs);
+  if (f.length > 90) f.shift();
+  if (now - adaptive.lastChange < 1500 || f.length < 60) return;
+  const avg = f.reduce((a, b) => a + b, 0) / f.length;
+  const budget = Math.min(...f) > 28 ? 1000 / 30 : 1000 / 60;
+  const cap = Math.min(window.devicePixelRatio, MOBILE_PIXELS.max);
+  const floor = Math.min(MOBILE_PIXELS.min, cap);
+  if (!halfRate && budget < 20 && adaptive.ratio <= floor + 1e-6 && avg > budget * 1.15 && avg < 30) {
+    halfRate = true;
+    adaptive.frames.length = 0;
+    adaptive.lastChange = now;
+    return;
+  }
+  let next = adaptive.ratio;
+  const starved = vision.starved;
+  if (avg > budget * 1.09 || starved) {
+    next = adaptive.ratio - 0.125;
+    if (starved && now - adaptive.lastProbe < 4000) adaptive.backoff = Math.min(60000, (adaptive.backoff ?? 8000) * 2);
+  } else if (avg < budget * 1.045 && adaptive.ratio < cap && vision.healthy && now - adaptive.lastProbe > (adaptive.backoff ?? 8000)) {
+    next = adaptive.ratio + 0.125;
+    adaptive.lastProbe = now;
+  }
+  next = Math.min(cap, Math.max(floor, next));
   if (next !== adaptive.ratio) {
     adaptive.ratio = next;
     adaptive.lastChange = now;
@@ -256,11 +310,22 @@ const orbitPanel = new OrbitPanel(orbitSettings, () => {});
 const modeSwitch = new ModeSwitch((mode) => setViewMode(mode));
 modeSwitch.set(viewModeOf(cameraMode));
 // Upute (izmjenjuju se; svaka nestane kad gesta prvi put uspije).
-const hints = new Hints([
+const CAMERA_HINTS = [
   { id: 'head', text: 'Move your head' },
   { id: 'point', text: 'Point at its face' },
   { id: 'palm', text: 'Open your palm' },
-]);
+];
+// Mobitel bez kamere: iste reakcije dodirom.
+const TOUCH_HINTS = [
+  { id: 'drag', text: 'Drag to move around' },
+  { id: 'tap', text: 'Tap its face' },
+  { id: 'spread', text: 'Spread two fingers' },
+  { id: 'pinch', text: 'Pinch to put it back', when: () => robot.explode.amount > 0.4 },
+];
+const hints = new Hints(IS_MOBILE ? TOUCH_HINTS : CAMERA_HINTS);
+// Dodir na mobitelu (povlačenje = glava dok kamera ne radi, dodir = prst, dva prsta = dlan/šaka).
+const touch = IS_MOBILE ? new TouchInput({ headDrag: () => cameraFailed || !tracker.ready, rest: REST_DISTANCE }) : null;
+const cameraNote = IS_MOBILE ? new CameraNote(() => startCamera(), IN_APP) : null;
 
 // Obavijesti iz vremena učitavanja (kamera) pokažu se tek kad se robot otkrije.
 let pendingToast = null;
@@ -292,14 +357,27 @@ let handOverride = null; // za automatske testove (window.__ht.setHand)
 
 resize();
 
-tracker
-  .start()
-  .then(() => notify('Camera ready — move your head', 2000))
-  .catch((err) => {
-    cameraFailed = true;
-    console.warn('Kamera nije dostupna', err);
-    notify('No camera — your mouse moves the head (wheel = distance)', 4200);
-  });
+function startCamera() {
+  return tracker
+    .start()
+    .then(() => {
+      cameraFailed = false;
+      cameraNote?.hide();
+      notify('Camera ready — move your head', 2000);
+    })
+    .catch((err) => {
+      cameraFailed = true;
+      console.warn('Kamera nije dostupna', err);
+      // Mobitel: umjesto obavijesti stoji poruka s gumbom za ponovni pokušaj.
+      if (cameraNote) cameraNote.show();
+      else notify('No camera — your mouse moves the head (wheel = distance)', 4200);
+      throw err;
+    });
+}
+startCamera().catch(() => {});
+// Mobitel: ako se kamera ne javi (preglednik ne pita, Instagramov preglednik…), poruka se
+// pokaže i bez greške — dodir radi cijelo vrijeme.
+if (cameraNote) setTimeout(() => !vision.streaming && !cameraFailed && cameraNote.show(), 8000);
 
 // Vlastiti .glb/.gltf postaje glava robota i dobiva iste oči.
 setupDropzone(async (files) => {
@@ -413,7 +491,7 @@ const orbitState = { source: null, lostSince: 0, wasTracking: false };
 function updateOrbitCalibration(now, source, rect) {
   const rest = new THREE.Vector3(rect.cx, rect.cy, REST_DISTANCE);
   if (source !== orbitState.source) {
-    if (source === 'miš' || source === 'test') orbit.setNeutral(rest);
+    if (source === 'miš' || source === 'test' || source === 'dodir') orbit.setNeutral(rest);
     orbitState.source = source;
   }
   if (source === 'kamera' || source === 'centar') {
@@ -443,7 +521,14 @@ function updatePose(now, dt, rect) {
     return 'test';
   }
 
-  if (mouseMode || cameraFailed || !tracker.ready) {
+  if (IS_MOBILE && (cameraFailed || !tracker.ready)) {
+    // Mobitel bez kamere (ili dok se pokreće): povlačenje prstom glumi glavu.
+    pose.tracked = [...touch.updateHead(rect, dt)];
+    pose.roll = 0;
+    pose.weight = 1;
+    source = 'dodir';
+    hud.setStatus('idle', cameraFailed ? 'No camera · drag to move' : vision.streaming ? 'Starting face tracking…' : 'Waiting for camera…');
+  } else if (mouseMode || cameraFailed || !tracker.ready) {
     // Miš glumi glavu: ručno (K), bez kamere, ili dok se kamera još pokreće.
     pose.tracked = [...mouse.update(rect, dt, mouseHand.capturesMouse)];
     pose.roll = 0;
@@ -471,10 +556,24 @@ function updatePose(now, dt, rect) {
     source = tracking ? 'kamera' : 'centar';
   }
 
+  // Mobitel s kamerom: položaj kamere i držanje mobitela nisu poznati točno, pa je "ravno
+  // ispred" tamo gdje je lice bilo kad je pronađeno (isti neutralni položaj kao za ORBIT).
+  if (IS_MOBILE) updateMobileCenter(dt, source, rest);
   const w = smoothstep(pose.weight);
-  for (let i = 0; i < 3; i++) pose.eye[i] = rest[i] + (pose.tracked[i] - rest[i]) * w;
+  for (let i = 0; i < 3; i++) pose.eye[i] = rest[i] + (pose.tracked[i] - mobileCenter[i] - rest[i]) * w;
   pose.eye[2] = Math.max(pose.eye[2], 5);
   return source;
+}
+
+const mobileCenter = [0, 0, 0]; // računalo: uvijek nula
+function updateMobileCenter(dt, source, rest) {
+  const camera = source === 'kamera' || source === 'centar';
+  const n = orbit.neutral;
+  const tx = camera && n && !orbit.calibrating ? n.x - rest[0] : camera ? mobileCenter[0] : 0;
+  const ty = camera && n && !orbit.calibrating ? n.y - rest[1] : camera ? mobileCenter[1] : 0;
+  const k = 1 - Math.exp(-dt * 2.5);
+  mobileCenter[0] += (tx - mobileCenter[0]) * k;
+  mobileCenter[1] += (ty - mobileCenter[1]) * k;
 }
 
 // ---------- Upute: prepoznavanje prvog uspjeha ----------
@@ -482,6 +581,8 @@ function updatePose(now, dt, rect) {
 // Kažiprst: oči robota drže prst ~0,35 s. Dlan: robot se vidljivo rastavio.
 const hintProbe = { source: null, ref: null, pointFor: 0 };
 function updateHints(now, dt, source) {
+  // Mobitel: upute za kameru tek kad kamera stvarno prati, inače upute za dodir.
+  if (IS_MOBILE) hints.setItems(tracker.ready && !cameraFailed ? CAMERA_HINTS : TOUCH_HINTS);
   if (source !== hintProbe.source) {
     hintProbe.source = source;
     hintProbe.ref = null;
@@ -489,12 +590,32 @@ function updateHints(now, dt, source) {
   if (source !== 'centar') {
     const p = pose.tracked;
     if (!hintProbe.ref) hintProbe.ref = [...p];
-    else if (Math.hypot(p[0] - hintProbe.ref[0], p[1] - hintProbe.ref[1]) > 7) hints.complete('head', now);
+    else if (Math.hypot(p[0] - hintProbe.ref[0], p[1] - hintProbe.ref[1]) > 7) hints.complete(source === 'dodir' ? 'drag' : 'head', now);
   }
   hintProbe.pointFor = robot.fingerAttn > 0.8 ? hintProbe.pointFor + dt : 0;
   if (hintProbe.pointFor > 0.35) hints.complete('point', now);
-  if (robot.explode.amount > 0.4) hints.complete('palm', now);
+  if (touch?.active && robot.touching) hints.complete('tap', now);
+  if (robot.explode.amount > 0.4) {
+    hints.complete('palm', now);
+    hints.complete('spread', now);
+    hintProbe.exploded = true;
+  } else if (hintProbe.exploded && robot.explode.amount < 0.05) {
+    hints.complete('pinch', now);
+  }
   hints.update(now);
+}
+
+// ---------- Mobitel: kadar ----------
+// Mjerilo robota prema visini prozora (kao na računalu), bez donje granice od 0,75.
+// Mobitel je bliže licu (35 cm) nego laptop (60 cm), pa u niskom položenom prozoru
+// robot treba ~0,7 tog mjerila da glava zauzme sličan dio kadra kao na računalu (~½ visine).
+function mobileLayout(rect) {
+  const k = rect.width > rect.height ? 0.7 : 1;
+  return { scale: Math.max(0.2, (rect.height / 18.8) * k) };
+}
+// Robot ostaje u sredini (sučelje je uz rubove); mjesto za eventualni pomak kadra.
+function mobileLift() {
+  return 0;
 }
 
 // ---------- Petlja ----------
@@ -510,8 +631,11 @@ const orbitTarget = new THREE.Vector3();
 const neutralEye = new THREE.Vector3();
 let lastFrame = performance.now();
 let t = 0;
+let testFrameCost = 0; // ms, samo za testove (window.__ht.setFrameCost)
 
 function frame() {
+  // Mobitel koji ne drži 60 fps: stabilnih 30 fps (svaki drugi frame preskoči).
+  if (halfRate && frameTick++ % 2) return;
   renderer.info.reset();
   const now = performance.now();
   const frameMs = now - lastFrame;
@@ -521,17 +645,24 @@ function frame() {
   t += dt;
 
   const rect = getCanvasRect(settings);
+  if (IS_MOBILE) {
+    // FOV i položaj prednje kamere prate orijentaciju mobitela.
+    settings.cameraFov = mobileCameraFov(vision.video);
+    [settings.cameraX, settings.cameraY] = mobileCameraPosition(rect);
+  }
   if (Math.abs(rect.width - laidOut.w) > 0.05 || Math.abs(rect.height - laidOut.h) > 0.05) {
-    robot.layout(rect);
+    if (IS_MOBILE) robot.layout(rect, mobileLayout(rect));
+    else robot.layout(rect);
     laidOut = { w: rect.width, h: rect.height };
   }
-  world.position.set(rect.cx, rect.cy, 0);
+  world.position.set(rect.cx, rect.cy + (IS_MOBILE ? mobileLift(rect) : 0), 0);
   world.updateMatrixWorld(true);
   // Detekcija (u načinu glavne niti) i ruke prije glave: glava treba okvire ruku
   // da zna kad ruka zaklanja lice.
   vision.update(now);
   hands.update(now, pose.tracked[2]);
   const mouseEvents = mouseHand.update(now, dt);
+  const touchEvents = touch?.update(now) ?? [];
   const source = updatePose(now, dt, rect);
   updateOrbitCalibration(now, source, rect);
   // ORBIT ulaz: zadnji praćeni položaj glave; težina pada na 0 kad se lice izgubi.
@@ -598,8 +729,8 @@ function frame() {
   // Ruke u 3D: zrake iz trenutne kamere, dubina relativna na neutralnu.
   const hand = handInput.update(now, dt, {
     tracker: hands,
-    mouse: mouseHand,
-    mouseEvents,
+    mouse: touch?.active ? touch : mouseHand,
+    mouseEvents: touch?.active ? touchEvents : mouseEvents,
     camera: camMono,
     reach,
     override: handOverride,
@@ -626,6 +757,9 @@ function frame() {
   }
   if (!revealed) onRobotFrame(now, frameMs);
   else updateHints(now, dt, source);
+
+  // Test: umjetni trošak framea (provjera dinamičke rezolucije i 30 fps na slabom mobitelu).
+  if (testFrameCost) for (const end = performance.now() + testFrameCost; performance.now() < end; );
 
   // Novi frame kamere ide u worker tek sad, kad je ovaj frame predan GPU-u.
   vision.afterRender();
@@ -708,6 +842,7 @@ window.__ht = {
   /** Okini zatvarač (treptaj) odmah. */
   blink: () => robot.gaze.blinkNow(),
   hints,
+  touch,
   /** Orbit bez glave: { az, el, zoom } (zoom = faktor udaljenosti), null vraća upravljanje glavi. */
   setOrbit: (o) => (orbit.override = o ? { snap: true, ...o } : null),
   orbit,
@@ -717,6 +852,10 @@ window.__ht = {
     phase,
     ready: revealed,
     viewMode: viewModeOf(cameraMode),
+    mobile: IS_MOBILE,
+    halfRate,
+    cameraFailed,
+    cameraNote: !!cameraNote?.visible,
     cameraMode,
     gazeMode: gazeModes[cameraMode],
     headYawDeg: +THREE.MathUtils.radToDeg(robot.lastGaze?.head.x ?? 0).toFixed(1),
@@ -727,6 +866,9 @@ window.__ht = {
     triangles: renderer.info.render.triangles,
   }),
   robot,
+  camera: camMono,
+  /** Test: umjetni trošak framea u ms (simulacija slabog uređaja). */
+  setFrameCost: (ms) => (testFrameCost = ms),
   post,
   benchmark,
   profile: (on) => {

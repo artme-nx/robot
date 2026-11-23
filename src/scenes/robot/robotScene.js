@@ -752,8 +752,9 @@ export class RobotScene {
     return list;
   }
 
-  layout(rect) {
-    const s = THREE.MathUtils.clamp(rect.height / 18.8, 0.75, 2.4);
+  /** @param {{minScale?: number, scale?: number}} o mobitel: drugačije mjerilo (računalo: zadano) */
+  layout(rect, o = {}) {
+    const s = o.scale ?? THREE.MathUtils.clamp(rect.height / 18.8, o.minScale ?? 0.75, 2.4);
     this.display.scale.setScalar(s);
     this.displayScale = s;
     for (const [light, base] of this.scaledLights ?? []) light.intensity = base * s * s;
