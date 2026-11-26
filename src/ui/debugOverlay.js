@@ -45,7 +45,7 @@ export class DebugOverlay {
     }
   }
 
-  draw({ tracker, hands, hand, vision, source, eye, rect, stereo, sceneName, quality, orbitInfo, open }) {
+  draw({ tracker, hands, hand, vision, source, eye, rect, stereo, sceneName, quality, orbitInfo, open, rec }) {
     if (!this.visible) return;
     const { ctx, canvas } = this;
     const cw = canvas.width, ch = canvas.height;
@@ -174,6 +174,7 @@ export class DebugOverlay {
       lines.push(`rastav. cilj ${n2(open.target)} · napredak ${n2(open.p)}`);
       lines.push(`        ${OPEN_MODE[open.mode] ?? open.mode}${open.reason ? ` (${open.reason})` : ''}${open.latched ? ' · magnet' : ''}`);
     }
+    if (rec) lines.push(rec);
     lines.push(`FPS    ${this.fps.toFixed(0)}`);
     if (vision?.ready) {
       const where = vision.mode === 'worker' ? `worker ${vision.delegates?.face ?? ''}` : 'glavna nit';

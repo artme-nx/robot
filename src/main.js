@@ -21,6 +21,8 @@ import { GpuProfiler } from './render/gpuProfiler.js';
 import { RobotScene } from './scenes/robot/robotScene.js';
 import { classifyFiles, loadMeshFiles } from './scenes/loaders.js';
 import { DebugOverlay } from './ui/debugOverlay.js';
+import { HandRecorder } from './ui/handRecorder.js';
+import { OPEN } from './interaction/openControl.js';
 import { CalibrationPanel } from './ui/calibrationPanel.js';
 import { OrbitPanel } from './ui/orbitPanel.js';
 import { OrbitController, loadOrbitSettings } from './camera/orbitController.js';
@@ -339,6 +341,7 @@ function setQuality(name) {
 const loader = new Loader();
 const hud = new Hud();
 const debug = new DebugOverlay();
+const recorder = new HandRecorder(10); // D + R: snimka upravljanja rukom (JSON u Downloads)
 // Mobitel: samo lice (ruke zamjenjuje dodir), manja slika kamere i najviše 20 detekcija u sekundi.
 const vision = new VisionSource(
   IS_MOBILE
@@ -506,7 +509,13 @@ window.addEventListener('keydown', (e) => {
       hud.toggle();
       break;
     case 'r':
-      robot.flipCustomHead();
+      // U debug prikazu R snima upravljanje rukom (10 s, JSON u Downloads); inače okreće vlastitu glavu.
+      if (debug.visible) {
+        if (recorder.active) recorder.stop();
+        else recorder.start(performance.now(), recordMeta());
+      } else {
+        robot.flipCustomHead();
+      }
       break;
     case '[':
       robot.scaleCustomHead(1 / 1.08);
@@ -859,6 +868,16 @@ function frame() {
     hand,
   });
   markers.update(hand, camMono, dt, robot.displayScale ?? 1);
+  if (recorder.active) {
+    recorder.record(now, {
+      dt,
+      source: hand.source,
+      framing: !!hand.frame?.valid,
+      views: hand.hands.filter((v) => v.alive),
+      control: robot.openControl.debug(),
+      explode: { target: robot.explodeTarget, p: robot.explode.p, amount: robot.explode.amount, freq: robot.explode.freq },
+    });
+  }
 
   // Sjene se računaju jednom po frameu (oba oka i bloom ih dijele).
   renderer.shadowMap.needsUpdate = true;
@@ -884,7 +903,7 @@ function frame() {
     mode === 'orbit'
       ? `ORBIT az ${orbit.az.toFixed(1)}° el ${(orbit.effectiveEl ?? orbit.el).toFixed(1)}° zoom ${(1 / orbit.zoom).toFixed(2)}×${orbit.calibrating ? ' · kalibriram' : ''}`
       : CAMERA_BADGE[mode];
-  debug.draw({ tracker, hands, hand, vision, source, eye: pose.eye, rect, stereo, sceneName: robot.name, quality: `${quality} ${renderer.getPixelRatio().toFixed(2)}×`, orbitInfo, open: debug.visible ? { ...robot.openControl.debug(), target: robot.explodeTarget, p: robot.explode.p } : null });
+  debug.draw({ tracker, hands, hand, vision, source, eye: pose.eye, rect, stereo, sceneName: robot.name, quality: `${quality} ${renderer.getPixelRatio().toFixed(2)}×`, orbitInfo, open: debug.visible ? { ...robot.openControl.debug(), target: robot.explodeTarget, p: robot.explode.p } : null, rec: debug.visible ? recorder.status(now) : null });
   panel.showMeasurement(pose.eye, source);
   followPanel.showState(
     cameraFollow
@@ -908,6 +927,19 @@ function benchmark(n = 30) {
   const ms = (performance.now() - t0) / n;
   renderer.setAnimationLoop(frame);
   return +ms.toFixed(2);
+}
+
+/** Zaglavlje snimke: postavke upravljanja i kamere (za usporedbu snimki prije/poslije). */
+function recordMeta() {
+  const v = tracker?.video;
+  return {
+    build: __BUILD__,
+    OPEN: { ...OPEN },
+    camera: v ? { w: v.videoWidth, h: v.videoHeight } : null,
+    viewMode: viewModeOf(cameraMode),
+    cameraMode,
+    mobile: IS_MOBILE,
+  };
 }
 
 function setHandOverride(o) {
@@ -1001,6 +1033,8 @@ window.__ht = {
     triangles: renderer.info.render.triangles,
   }),
   robot,
+  /** Snimač upravljanja rukom (D + R). */
+  recorder,
   camera: camMono,
   /** Test: umjetni trošak framea u ms (simulacija slabog uređaja). */
   setFrameCost: (ms) => (testFrameCost = ms),

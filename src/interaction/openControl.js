@@ -64,6 +64,7 @@ class HandOpen {
     this.closedFor = 0;
     this.pointFor = 0;
     this.pointShape = false;
+    this.fresh = false; // nova detekcija u ovom frameu
   }
 
   /** Jedan frame: brzina dlana, pouzdanost, novi uzorak u filtar, brojači za odluke. */
@@ -85,7 +86,8 @@ class HandOpen {
 
     // Kamera: novi uzorak samo kad stigne nova detekcija; test/simulacija: svaki frame.
     const key = v.openT ?? t;
-    if (key !== this.sampleKey) {
+    this.fresh = key !== this.sampleKey;
+    if (this.fresh) {
       this.sampleKey = key;
       if (this.reliable) {
         const tf = v.openT != null ? v.openT / 1000 : t;
@@ -243,6 +245,12 @@ export class OpenControl {
       reliable: h.reliable,
       edge: h.edge,
       speed: h.speed,
+      reliableFor: h.reliableFor,
+      openFor: h.openFor,
+      closedFor: h.closedFor,
+      pointFor: h.pointFor,
+      pointShape: h.pointShape,
+      fresh: h.fresh,
     }));
     const active = this.hands.get(this.activeId) ?? null;
     return { mode: this.mode, reason: this.reason, activeId: this.activeId, latched: this.latched, hands: list, active: active ? list.find((x) => x.id === active.id) : null };

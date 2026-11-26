@@ -220,7 +220,7 @@ npm run preview   # lokalni pregled builda
 | `O` (drži) | otvoren dlan — prsti se postupno šire dok držiš |
 | `Z` (drži) | šaka |
 | `B` (drži) + miš | okvir od dvije ruke: vuci pravokutnik od točke pritiska |
-| `R` | okreni vlastitu glavu za 180° |
+| `R` | u debug prikazu (`D`): **snimka upravljanja rukom** — 10 s svaki frame (sirova i zaglađena otvorenost, prsti, rub kadra, brzina, stanje upravljanja, magnet, cilj i napredak rastavljanja) spremi se u Downloads kao `robot-ruka-<vrijeme>.json` (ponovni `R` završi ranije); inače okreće vlastitu glavu za 180° |
 | `[` / `]` | smanji / povećaj vlastitu glavu |
 | `↑` / `↓` | fino pomicanje očiju na vlastitoj glavi |
 
